@@ -23,7 +23,7 @@
 use seq::seq;
 
 seq!(N in 0..8 {
-    // nothing
+    a b a~b~N~c a
 });
 
 fn main() {}
