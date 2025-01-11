@@ -2,26 +2,10 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::parse::Parser;
 
-
-enum RepeatSectionTree {
-    Replace,
-    Identity,
-    Repeat,
-    Concat,
-    Group,
-}
-
-
 enum SectionTree {
-    Replace,
     Identity,
-    Repeat,
     Concat,
     Group,
-}
-
-struct ReplaceSection {
-    tokens: Vec<proc_macro2::TokenTree>
 }
 
 #[derive(Debug)]
@@ -34,20 +18,12 @@ struct ConcatSection {
     tokens: Vec<proc_macro2::TokenTree>
 }
 
-
-
-struct SectionStream {
-    sections: Vec<SectionTree>,
-}
-
-
 #[derive(Debug)]
 struct ParseContext {
     iter_ident: proc_macro2::Ident,
     start: usize,
     end: usize,
 }
-
 
 impl syn::parse::Parse for ParseContext {
 // impl ParseContext {
@@ -79,8 +55,6 @@ impl syn::parse::Parse for ParseContext {
         })
     }
 }
-
-
 
 impl ParseContext {
     fn parse_identity(&self, input: syn::parse::ParseStream) -> syn::parse::Result<IdentitySection> {
@@ -167,8 +141,6 @@ impl ParseContext {
     }
 }
 
-
-
 #[derive(Debug)]
 struct SeqTree {
     parse_ctx: ParseContext,
@@ -202,8 +174,6 @@ impl syn::parse::Parse for SeqTree {
     }
 }
 
-
-
 #[proc_macro]
 pub fn seq(input: TokenStream) -> TokenStream {
 
@@ -233,10 +203,7 @@ pub fn seq(input: TokenStream) -> TokenStream {
     //     return ret.into();
     // };
 
-
-
     // let parse_ctx: ParseContext = input.parse()?;
-
     
     TokenStream::new()
 }
