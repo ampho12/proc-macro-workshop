@@ -2,10 +2,12 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::parse::Parser;
 
+
+#[derive(Debug)]
 enum SectionTree {
-    Identity,
-    Concat,
-    Group,
+    Identity(IdentitySection),
+    Concat(ConcatSection),
+    Group(Group),
 }
 
 #[derive(Debug)]
@@ -16,6 +18,11 @@ struct IdentitySection {
 #[derive(Debug)]
 struct ConcatSection {
     tokens: Vec<proc_macro2::TokenTree>
+}
+
+#[derive(Debug)]
+struct Group {
+    sections: Vec<SectionTree>
 }
 
 #[derive(Debug)]
@@ -139,6 +146,58 @@ impl ParseContext {
 
         Ok(ret)
     }
+
+    fn parse_group(&self, input: syn::parse::ParseStream) -> syn::parse::Result<Group> {
+        let start_cond = |input: syn::parse::ParseStream| -> bool {
+            let fork = input.fork();
+            if input.is_empty()
+            || fork.parse::<proc_macro2::Group>().is_err() {
+                return false;
+            }
+            true
+        };
+
+        eprintln!("parse_group: pre-visit: {:?}", input);
+        if !start_cond(input) {
+            return Err(input.error("Failed to meet start conditions for group"));
+        }
+
+        let g = input.parse::<proc_macro2::Group>()?;
+
+        let parser = |input: syn::parse::ParseStream| -> syn::parse::Result<Group> {
+            // eprintln!("parse_group: parser: self: {:?}", self);
+            // eprintln!("parse_group: parser: input: {:?}", input);
+
+            let mut ret = Group {
+                sections: vec![],
+            };
+
+            while !input.is_empty() {
+
+                if let Ok(sect) = self.parse_identity(input) {
+                    ret.sections.push(SectionTree::Identity(sect));
+                } else if let Ok(sect) = self.parse_concat(input) {
+                    ret.sections.push(SectionTree::Concat(sect));
+                } else if let Ok(sect) = self.parse_group(input) {
+                    ret.sections.push(SectionTree::Group(sect));
+                } else {
+                    // couldn't parse as anything
+                    return Err(input.error("Failed to parse as any section"));
+                }
+            }
+
+            Ok(ret)
+        };
+
+        let ret = parser.parse2(g.stream());
+
+        // ret.tokens.push(input.parse::<proc_macro2::TokenTree>()?);
+        // while !stop_cond(input) {
+        //     ret.tokens.push(parse_concat_link(input)?);
+        // }
+        eprintln!("parse_group: post-visit: {:?}", input);
+        ret
+    }
 }
 
 #[derive(Debug)]
@@ -149,20 +208,24 @@ struct SeqTree {
 impl syn::parse::Parse for SeqTree {
     fn parse(input: syn::parse::ParseStream) -> syn::parse::Result<Self> {
         let parse_ctx: ParseContext = input.parse()?;
+        // eprintln!("parse_ctx is {:?}", parse_ctx);
 
         let body;
         syn::braced!(body in input);
-
         let input = &body;
-        // eprintln!("parse_ctx is {:?}", parse_ctx);
+        
+        // parse something
 
-        // eprintln!("input is {:?}", input);
+
         let ident_sect = parse_ctx.parse_identity(input)?;
         eprintln!("ident_sect is {:?}\n", ident_sect);
 
         // eprintln!("input is {:?}", input);
         let ident_sect = parse_ctx.parse_concat(input)?;
         eprintln!("concat_sect is {:?}\n", ident_sect);
+
+        let group = parse_ctx.parse_group(input)?;
+        eprintln!("group is {:?}\n", group);
 
         while !input.is_empty() {
             input.parse::<proc_macro2::TokenTree>()?;
