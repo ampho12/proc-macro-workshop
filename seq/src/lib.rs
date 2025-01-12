@@ -15,8 +15,10 @@ enum SectionTree {
     Replace(ReplaceSection),
     Group(Group),
     NoNestRepeatGroup(NoNestRepeatGroup),
-
     RepeatGroup(RepeatGroup),
+
+    IdentityGroup(IdentityGroup),
+    BaseNestRepeatGroup(BaseNestRepeatGroup),
 }
 
 #[derive(Debug)]
@@ -38,12 +40,22 @@ struct Group {
 }
 
 #[derive(Debug)]
+struct IdentityGroup {
+    sections: Vec<SectionTree>
+}
+
+#[derive(Debug)]
 struct NoNestRepeatGroup {
     sections: Vec<SectionTree>
 }
 
 #[derive(Debug)]
 struct RepeatGroup {
+    sections: Vec<SectionTree>
+}
+
+#[derive(Debug)]
+struct BaseNestRepeatGroup {
     sections: Vec<SectionTree>
 }
 
@@ -304,12 +316,71 @@ impl ParseContext {
                     ParseOutcome::FatalError(err) => return Err(err),
                     ParseOutcome::RecoverableError => {},
                 }
+                
+                // No branch matched, Unrecoverable
+                return Err(input.error("Unable to Parse"));
+            }
+
+            Ok(ret)
+        };
+
+        let ret = parser.parse2(g.stream());
+        eprintln!("parse_group: post-visit: {:?}", input);
+
+        match ret {
+            Ok(group) => ParseOutcome::Valid(group),
+            Err(error) => ParseOutcome::FatalError(error),
+        }
+    }
+
+    fn parse_identity_group(&self, input: syn::parse::ParseStream) -> ParseOutcome<IdentityGroup> {
+
+        let start_cond = |input: syn::parse::ParseStream| -> bool {
+            let fork = input.fork();
+            if input.is_empty()
+            || fork.parse::<proc_macro2::Group>().is_err() {
+                return false;
+            }
+            true
+        };
+
+        eprintln!("identity_group: pre-visit: {:?}", input);
+        if !start_cond(input) {
+            // try parsing another way if possible
+            return ParseOutcome::RecoverableError;
+        }
+
+        let Ok(g) = input.parse::<proc_macro2::Group>() else {
+            return ParseOutcome::RecoverableError;
+        };
+
+        let parser = |input: syn::parse::ParseStream| -> syn::parse::Result<IdentityGroup> {
+
+            let mut ret = IdentityGroup {
+                sections: vec![],
+            };
+
+            while !input.is_empty() {
 
                 let fork = &input.fork();
-                match self.parse_repeat_group(fork) {
+                match self.parse_identity(fork) {
                     ParseOutcome::Valid(_) => {
-                        if let ParseOutcome::Valid(sect) = self.parse_repeat_group(input) {
-                            ret.sections.push(SectionTree::RepeatGroup(sect));
+                        if let ParseOutcome::Valid(sect) = self.parse_identity(input) {
+                            ret.sections.push(SectionTree::Identity(sect));
+                        } else {
+                            panic!("Fork parsed but input not parsed. This should never happen");
+                        }
+                        continue;
+                    }
+                    ParseOutcome::FatalError(err) => return Err(err),
+                    ParseOutcome::RecoverableError => {},
+                }
+
+                let fork = &input.fork();
+                match self.parse_identity_group(fork) {
+                    ParseOutcome::Valid(_) => {
+                        if let ParseOutcome::Valid(sect) = self.parse_identity_group(input) {
+                            ret.sections.push(SectionTree::IdentityGroup(sect));
                         } else {
                             panic!("Fork parsed but input not parsed. This should never happen");
                         }
@@ -319,9 +390,9 @@ impl ParseContext {
                     ParseOutcome::FatalError(err) => return Err(err),
                     ParseOutcome::RecoverableError => {},
                 }
-                
+
                 // No branch matched, Unrecoverable
-                return Err(input.error("Unable to Parse"));
+                return Err(input.error("Identity Group: Unable to Parse"));
             }
 
             Ok(ret)
@@ -555,6 +626,95 @@ impl ParseContext {
             Err(error) => ParseOutcome::FatalError(error),
         }
     }
+
+    fn parse_base_nest_repeat_group(&self, input: syn::parse::ParseStream) -> ParseOutcome<BaseNestRepeatGroup> {
+
+        let start_cond = |input: syn::parse::ParseStream| -> bool {
+            let fork = input.fork();
+            if input.is_empty()
+            || fork.parse::<proc_macro2::Group>().is_err() {
+                return false;
+            }
+            true
+        };
+
+        eprintln!("parse_base_nest_repeat_group: pre-visit: {:?}", input);
+        if !start_cond(input) {
+            // try parsing another way if possible
+            return ParseOutcome::RecoverableError;
+        }
+
+        let Ok(g) = input.parse::<proc_macro2::Group>() else {
+            return ParseOutcome::RecoverableError;
+        };
+
+        let parser = |input: syn::parse::ParseStream| -> syn::parse::Result<BaseNestRepeatGroup> {
+
+            let mut ret = BaseNestRepeatGroup {
+                sections: vec![],
+            };
+
+            while !input.is_empty() {
+
+                let fork = &input.fork();
+                match self.parse_identity(fork) {
+                    ParseOutcome::Valid(_) => {
+                        if let ParseOutcome::Valid(sect) = self.parse_identity(input) {
+                            ret.sections.push(SectionTree::Identity(sect));
+                        } else {
+                            panic!("Fork parsed but input not parsed. This should never happen");
+                        }
+                        continue;
+                    }
+                    ParseOutcome::FatalError(err) => return Err(err),
+                    ParseOutcome::RecoverableError => {},
+                }
+
+                let fork = &input.fork();
+                match self.parse_identity_group(fork) {
+                    ParseOutcome::Valid(_) => {
+                        if let ParseOutcome::Valid(sect) = self.parse_identity_group(input) {
+                            ret.sections.push(SectionTree::IdentityGroup(sect));
+                        } else {
+                            panic!("Fork parsed but input not parsed. This should never happen");
+                        }
+                        continue;
+                    }
+                    // ParseOutcome::Valid(sect) => ret.sections.push(SectionTree::Group(sect)),
+                    ParseOutcome::FatalError(err) => return Err(err),
+                    ParseOutcome::RecoverableError => {},
+                }
+
+                let fork = &input.fork();
+                match self.parse_repeat_group(fork) {
+                    ParseOutcome::Valid(_) => {
+                        if let ParseOutcome::Valid(sect) = self.parse_repeat_group(input) {
+                            ret.sections.push(SectionTree::RepeatGroup(sect));
+                        } else {
+                            panic!("Fork parsed but input not parsed. This should never happen");
+                        }
+                        continue;
+                    }
+                    // ParseOutcome::Valid(sect) => ret.sections.push(SectionTree::Group(sect)),
+                    ParseOutcome::FatalError(err) => return Err(err),
+                    ParseOutcome::RecoverableError => {},
+                }
+                
+                // No branch matched, Unrecoverable
+                return Err(input.error("BaseNestRepeatGroup: Unable to Parse"));
+            }
+
+            Ok(ret)
+        };
+
+        let ret = parser.parse2(g.stream());
+        eprintln!("parse_repeat_group: post-visit: {:?}", input);
+
+        match ret {
+            Ok(repeat_group) => ParseOutcome::Valid(repeat_group),
+            Err(error) => ParseOutcome::FatalError(error),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -567,52 +727,32 @@ impl syn::parse::Parse for SeqTree {
         let parse_ctx: ParseContext = input.parse()?;
         // eprintln!("parse_ctx is {:?}", parse_ctx);
 
-        let body;
-        syn::braced!(body in input);
-        let input = &body;
-
         let fork = &input.fork();
-        match parse_ctx.parse_identity(fork) {
+        match parse_ctx.parse_base_nest_repeat_group(fork) {
             ParseOutcome::Valid(_) => {
-                let ParseOutcome::Valid(ident_sect) = parse_ctx.parse_identity(input) else {
+                let ParseOutcome::Valid(group) = parse_ctx.parse_base_nest_repeat_group(input) else {
                     panic!("Fork parsed but input not parsed. This should never happen");
                 };
-                eprintln!("ident_sect: {:?}\n", ident_sect);
+                eprintln!("base_nest_repeat_group: {:?}\n", group);
             },
-            ParseOutcome::RecoverableError => eprintln!("Cannot parse as Identity Section"),
-            ParseOutcome::FatalError(err) => return Err(err),
-        }
-        
-        let fork = &input.fork();
-        match parse_ctx.parse_concat(fork) {
-            ParseOutcome::Valid(_) => {
-                let ParseOutcome::Valid(concat_sect) = parse_ctx.parse_concat(input) else {
-                    panic!("Fork parsed but input not parsed. This should never happen");
-                };
-                eprintln!("concat_sect: {:?}\n", concat_sect);
-            },
-            ParseOutcome::RecoverableError => eprintln!("Cannot parse as Concat Section"),
+            ParseOutcome::RecoverableError => eprintln!("Cannot parse as BaseNestRepeatGroup"),
             ParseOutcome::FatalError(err) => return Err(err),
         }
 
-        let fork = &input.fork();
-        match parse_ctx.parse_group(fork) {
-            ParseOutcome::Valid(_) => {
-                let ParseOutcome::Valid(group) = parse_ctx.parse_group(input) else {
-                    panic!("Fork parsed but input not parsed. This should never happen");
-                };
-                eprintln!("group: {:?}\n", group);
-            },
-            ParseOutcome::RecoverableError => eprintln!("Cannot parse as Group"),
-            ParseOutcome::FatalError(err) => return Err(err),
-        }
+        // let fork = &input.fork();
+        // match parse_ctx.parse_group(fork) {
+        //     ParseOutcome::Valid(_) => {
+        //         let ParseOutcome::Valid(group) = parse_ctx.parse_group(input) else {
+        //             panic!("Fork parsed but input not parsed. This should never happen");
+        //         };
+        //         eprintln!("group: {:?}\n", group);
+        //     },
+        //     ParseOutcome::RecoverableError => eprintln!("Cannot parse as Group"),
+        //     ParseOutcome::FatalError(err) => return Err(err),
+        // }
 
         // let group = parse_ctx.parse_group(input)?;
         // eprintln!("group is {:?}\n", group);
-
-        while !input.is_empty() {
-            input.parse::<proc_macro2::TokenTree>()?;
-        }
 
         Ok(SeqTree{
             parse_ctx,
