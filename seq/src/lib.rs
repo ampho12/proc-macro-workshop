@@ -12,8 +12,12 @@ enum ParseOutcome<T> {
 enum SectionTree {
     Identity(IdentitySection),
     Concat(ConcatSection),
+    Replace(ReplaceSection),
     Group(Group),
 }
+
+#[derive(Debug)]
+struct ReplaceSection;
 
 #[derive(Debug)]
 struct IdentitySection {
@@ -103,6 +107,36 @@ impl ParseContext {
         }
         eprintln!("parse_identity: post-visit: {:?}", input);
         ParseOutcome::Valid(ret)
+    }
+
+    fn parse_replace(&self, input: syn::parse::ParseStream) -> ParseOutcome<ReplaceSection> {
+        let stop_cond = |input: syn::parse::ParseStream| -> bool {
+            let fork = input.fork();
+            if input.is_empty()
+            || input.peek2(syn::Token![~]) {
+                return true;
+            }
+
+            if let Ok(ident) = fork.parse::<proc_macro2::Ident>() {
+               ident != self.iter_ident
+            } else {
+                true
+            }
+        };
+
+        eprintln!("parse_replace: pre-visit: {:?}", input);
+        if stop_cond(input) {
+            // try parsing another way if possible
+            return ParseOutcome::RecoverableError;
+        } else {
+            match input.parse::<proc_macro2::TokenTree>() {
+                Ok(_tt) => {},
+                Err(err) => return ParseOutcome::FatalError(err),
+            }
+        }
+
+        eprintln!("parse_replace: post-visit: {:?}", input);
+        ParseOutcome::Valid(ReplaceSection)
     }
 
     fn parse_concat(&self, input: syn::parse::ParseStream) -> ParseOutcome<ConcatSection> {
@@ -211,6 +245,21 @@ impl ParseContext {
                     ParseOutcome::Valid(_) => {
                         if let ParseOutcome::Valid(sect) = self.parse_concat(input) {
                             ret.sections.push(SectionTree::Concat(sect));
+                        } else {
+                            panic!("Fork parsed but input not parsed. This should never happen");
+                        }
+                        continue;
+                    }
+                    // ParseOutcome::Valid(sect) => ret.sections.push(SectionTree::Concat(sect)),
+                    ParseOutcome::FatalError(err) => return Err(err),
+                    ParseOutcome::RecoverableError => {},
+                }
+
+                let fork = &input.fork();
+                match self.parse_replace(fork) {
+                    ParseOutcome::Valid(_) => {
+                        if let ParseOutcome::Valid(sect) = self.parse_replace(input) {
+                            ret.sections.push(SectionTree::Replace(sect));
                         } else {
                             panic!("Fork parsed but input not parsed. This should never happen");
                         }
