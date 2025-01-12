@@ -1,3 +1,25 @@
+/* 
+* Refactoring TODOs:
+* 1. parser trait functions can return only a syn::parser::Error<T>. If we want to return
+*    recoverable errors from this type, we are limited. Thus, instead of returning parsed object,
+*    return something like
+*
+*    ```
+*    enum ParseOutcome<T> {
+*       Success(T),
+*       RecoverableError,
+*    }
+*    ```
+*
+*    and then return `syn::parse::Result<ParseOutcome<T>>` from the syn parse functions. Use the
+*    `syn::Error` as a fatal error.
+*
+* 2. Boilerplate reduction: A lot of code is boilerplate that is duplicated for error propagation.
+*    This can be reduced by provied helper functions. Impelemnt the `try_parse` function
+*
+* 3. Parser iterators: iterate over possible parsers for the parsestream at any stage
+*/
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::parse::Parser;
@@ -71,6 +93,9 @@ struct ParseContext {
     start: usize,
     end: usize,
 }
+
+
+
 
 impl syn::parse::Parse for ParseContext {
 // impl ParseContext {
