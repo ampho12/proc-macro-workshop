@@ -192,18 +192,28 @@ impl ParseContext {
 
             while !input.is_empty() {
 
-                match self.parse_identity(input) {
-                    ParseOutcome::Valid(sect) => {
-                        ret.sections.push(SectionTree::Identity(sect));
+                let fork = &input.fork();
+                match self.parse_identity(fork) {
+                    ParseOutcome::Valid(_) => {
+                        if let ParseOutcome::Valid(sect) = self.parse_identity(input) {
+                            ret.sections.push(SectionTree::Identity(sect));
+                        } else {
+                            panic!("Fork parsed but input not parsed. This should never happen");
+                        }
                         continue;
                     }
                     ParseOutcome::FatalError(err) => return Err(err),
                     ParseOutcome::RecoverableError => {},
                 }
 
-                match self.parse_concat(input) {
-                    ParseOutcome::Valid(sect) => {
-                        ret.sections.push(SectionTree::Concat(sect));
+                let fork = &input.fork();
+                match self.parse_concat(fork) {
+                    ParseOutcome::Valid(_) => {
+                        if let ParseOutcome::Valid(sect) = self.parse_concat(input) {
+                            ret.sections.push(SectionTree::Concat(sect));
+                        } else {
+                            panic!("Fork parsed but input not parsed. This should never happen");
+                        }
                         continue;
                     }
                     // ParseOutcome::Valid(sect) => ret.sections.push(SectionTree::Concat(sect)),
@@ -211,9 +221,14 @@ impl ParseContext {
                     ParseOutcome::RecoverableError => {},
                 }
 
-                match self.parse_group(input) {
-                    ParseOutcome::Valid(sect) => {
-                        ret.sections.push(SectionTree::Group(sect));
+                let fork = &input.fork();
+                match self.parse_group(fork) {
+                    ParseOutcome::Valid(_) => {
+                        if let ParseOutcome::Valid(sect) = self.parse_group(input) {
+                            ret.sections.push(SectionTree::Group(sect));
+                        } else {
+                            panic!("Fork parsed but input not parsed. This should never happen");
+                        }
                         continue;
                     }
                     // ParseOutcome::Valid(sect) => ret.sections.push(SectionTree::Group(sect)),
@@ -251,21 +266,39 @@ impl syn::parse::Parse for SeqTree {
         let body;
         syn::braced!(body in input);
         let input = &body;
-        
-        match parse_ctx.parse_identity(input) {
-            ParseOutcome::Valid(ident_sect) => eprintln!("ident_sect: {:?}\n", ident_sect),
+
+        let fork = &input.fork();
+        match parse_ctx.parse_identity(fork) {
+            ParseOutcome::Valid(_) => {
+                let ParseOutcome::Valid(ident_sect) = parse_ctx.parse_identity(input) else {
+                    panic!("Fork parsed but input not parsed. This should never happen");
+                };
+                eprintln!("ident_sect: {:?}\n", ident_sect);
+            },
             ParseOutcome::RecoverableError => eprintln!("Cannot parse as Identity Section"),
             ParseOutcome::FatalError(err) => return Err(err),
         }
         
-        match parse_ctx.parse_concat(input) {
-            ParseOutcome::Valid(concat_sect) => eprintln!("concat_sect: {:?}\n", concat_sect),
+        let fork = &input.fork();
+        match parse_ctx.parse_concat(fork) {
+            ParseOutcome::Valid(_) => {
+                let ParseOutcome::Valid(concat_sect) = parse_ctx.parse_concat(input) else {
+                    panic!("Fork parsed but input not parsed. This should never happen");
+                };
+                eprintln!("concat_sect: {:?}\n", concat_sect);
+            },
             ParseOutcome::RecoverableError => eprintln!("Cannot parse as Concat Section"),
             ParseOutcome::FatalError(err) => return Err(err),
         }
 
-        match parse_ctx.parse_group(input) {
-            ParseOutcome::Valid(group) => eprintln!("group: {:?}\n", group),
+        let fork = &input.fork();
+        match parse_ctx.parse_group(fork) {
+            ParseOutcome::Valid(_) => {
+                let ParseOutcome::Valid(group) = parse_ctx.parse_group(input) else {
+                    panic!("Fork parsed but input not parsed. This should never happen");
+                };
+                eprintln!("group: {:?}\n", group);
+            },
             ParseOutcome::RecoverableError => eprintln!("Cannot parse as Group"),
             ParseOutcome::FatalError(err) => return Err(err),
         }
