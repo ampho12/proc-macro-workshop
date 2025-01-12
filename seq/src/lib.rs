@@ -14,6 +14,7 @@ enum SectionTree {
     Concat(ConcatSection),
     Replace(ReplaceSection),
     Group(Group),
+    RepeatGroup(RepeatGroup),
 }
 
 #[derive(Debug)]
@@ -31,6 +32,11 @@ struct ConcatSection {
 
 #[derive(Debug)]
 struct Group {
+    sections: Vec<SectionTree>
+}
+
+#[derive(Debug)]
+struct RepeatGroup {
     sections: Vec<SectionTree>
 }
 
@@ -78,6 +84,7 @@ impl ParseContext {
             let fork = input.fork();
             if input.is_empty()
             || input.peek2(syn::Token![~]) 
+            || input.peek(syn::Token![#]) 
             || fork.parse::<proc_macro2::Group>().is_ok() {
                 return true;
             }
@@ -113,6 +120,7 @@ impl ParseContext {
         let stop_cond = |input: syn::parse::ParseStream| -> bool {
             let fork = input.fork();
             if input.is_empty()
+            || input.peek(syn::Token![#]) 
             || input.peek2(syn::Token![~]) {
                 return true;
             }
@@ -143,6 +151,7 @@ impl ParseContext {
         let start_cond = |input: syn::parse::ParseStream| -> bool {
             let fork = input.fork();
             if input.is_empty()
+            || input.peek(syn::Token![#]) 
             || !input.peek2(syn::Token![~]) 
             || fork.parse::<proc_macro2::Group>().is_ok() {
                 return false;
@@ -165,8 +174,12 @@ impl ParseContext {
             if fork.is_empty() {
                 return Err(input.error("Expected Token after '~'"));
             }
-
             input.parse::<syn::Token![~]>()?;
+
+            if fork.peek(syn::Token![#]) {
+                return Err(input.error("Cannot concatenate '#'"));
+            }
+
             if fork.parse::<proc_macro2::Group>().is_ok() {
                 return Err(input.error("Expected Non-Group Token"));
             }
@@ -297,6 +310,122 @@ impl ParseContext {
 
         match ret {
             Ok(group) => ParseOutcome::Valid(group),
+            Err(error) => ParseOutcome::FatalError(error),
+        }
+    }
+
+    fn parse_repeat_group(&self, input: syn::parse::ParseStream) -> ParseOutcome<RepeatGroup> {
+
+        let start_cond = |input: syn::parse::ParseStream| -> bool {
+            let fork = input.fork();
+            if input.is_empty()
+            || !input.peek(syn::Token![#]) {
+                return false;
+            }
+
+            // parse the hashtag
+            let _ = fork.parse::<syn::Token![#]>();
+            if fork.is_empty() {
+                return false;
+            }
+
+            if let Ok(group) = fork.parse::<proc_macro2::Group>() {
+                group.delimiter() == proc_macro2::Delimiter::Parenthesis
+            } else {
+                false
+            }
+        };
+
+        eprintln!("parse_repeat_group: pre-visit: {:?}", input);
+        if !start_cond(input) {
+            // try parsing another way if possible
+            return ParseOutcome::RecoverableError;
+        }
+        let _ = input.parse::<syn::Token![#]>();
+
+        let Ok(g) = input.parse::<proc_macro2::Group>() else {
+            return ParseOutcome::RecoverableError;
+        };
+
+        let parser = |input: syn::parse::ParseStream| -> syn::parse::Result<RepeatGroup> {
+
+            let mut ret = RepeatGroup {
+                sections: vec![],
+            };
+
+            while !input.is_empty() {
+
+                let fork = &input.fork();
+                match self.parse_identity(fork) {
+                    ParseOutcome::Valid(_) => {
+                        if let ParseOutcome::Valid(sect) = self.parse_identity(input) {
+                            ret.sections.push(SectionTree::Identity(sect));
+                        } else {
+                            panic!("Fork parsed but input not parsed. This should never happen");
+                        }
+                        continue;
+                    }
+                    ParseOutcome::FatalError(err) => return Err(err),
+                    ParseOutcome::RecoverableError => {},
+                }
+
+                let fork = &input.fork();
+                match self.parse_concat(fork) {
+                    ParseOutcome::Valid(_) => {
+                        if let ParseOutcome::Valid(sect) = self.parse_concat(input) {
+                            ret.sections.push(SectionTree::Concat(sect));
+                        } else {
+                            panic!("Fork parsed but input not parsed. This should never happen");
+                        }
+                        continue;
+                    }
+                    // ParseOutcome::Valid(sect) => ret.sections.push(SectionTree::Concat(sect)),
+                    ParseOutcome::FatalError(err) => return Err(err),
+                    ParseOutcome::RecoverableError => {},
+                }
+
+                let fork = &input.fork();
+                match self.parse_replace(fork) {
+                    ParseOutcome::Valid(_) => {
+                        if let ParseOutcome::Valid(sect) = self.parse_replace(input) {
+                            ret.sections.push(SectionTree::Replace(sect));
+                        } else {
+                            panic!("Fork parsed but input not parsed. This should never happen");
+                        }
+                        continue;
+                    }
+                    // ParseOutcome::Valid(sect) => ret.sections.push(SectionTree::Concat(sect)),
+                    ParseOutcome::FatalError(err) => return Err(err),
+                    ParseOutcome::RecoverableError => {},
+                }
+
+                let fork = &input.fork();
+                match self.parse_group(fork) {
+                    ParseOutcome::Valid(_) => {
+                        if let ParseOutcome::Valid(sect) = self.parse_group(input) {
+                            ret.sections.push(SectionTree::Group(sect));
+                        } else {
+                            panic!("Fork parsed but input not parsed. This should never happen");
+                        }
+                        continue;
+                    }
+                    // ParseOutcome::Valid(sect) => ret.sections.push(SectionTree::Group(sect)),
+                    ParseOutcome::FatalError(err) => return Err(err),
+                    ParseOutcome::RecoverableError => {},
+                }
+                
+                // No branch matched, Unrecoverable
+                return Err(input.error("RepeatGroup: Unable to Parse"));
+            }
+
+            Ok(ret)
+        };
+
+        let ret = parser.parse2(g.stream());
+        eprintln!("parse_group: post-visit: {:?}", input);
+
+        match ret {
+            Ok(repeat_group) => ParseOutcome::Valid(repeat_group),
             Err(error) => ParseOutcome::FatalError(error),
         }
     }
