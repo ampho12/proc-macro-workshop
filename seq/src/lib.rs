@@ -85,7 +85,7 @@ impl ParseContext {
             if let Ok(ident) = fork.parse::<proc_macro2::Ident>() {
                ident == self.iter_ident
             } else {
-                true
+                false
             }
         };
 
