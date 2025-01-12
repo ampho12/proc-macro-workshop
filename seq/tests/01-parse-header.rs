@@ -24,7 +24,8 @@ use seq::seq;
 
 seq!(N in 0..8 {
     a b a~b {
-        a~{
+        a~b ab {
+            c~d
         }
     }
 });

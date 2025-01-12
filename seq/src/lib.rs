@@ -2,6 +2,11 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::parse::Parser;
 
+enum ParseOutcome<T> {
+    Valid(T),            // Fully valid result
+    RecoverableError,    // Invalid but recoverable, e.g. parse another way
+    FatalError(syn::Error), // Unrecoverable error
+}
 
 #[derive(Debug)]
 enum SectionTree {
@@ -64,7 +69,7 @@ impl syn::parse::Parse for ParseContext {
 }
 
 impl ParseContext {
-    fn parse_identity(&self, input: syn::parse::ParseStream) -> syn::parse::Result<IdentitySection> {
+    fn parse_identity(&self, input: syn::parse::ParseStream) -> ParseOutcome<IdentitySection> {
         let stop_cond = |input: syn::parse::ParseStream| -> bool {
             let fork = input.fork();
             if input.is_empty()
@@ -80,24 +85,27 @@ impl ParseContext {
             }
         };
 
+        eprintln!("parse_identity: pre-visit: {:?}", input);
+        if stop_cond(input) {
+            // try parsing another way if possible
+            return ParseOutcome::RecoverableError;
+        }
+
         let mut ret = IdentitySection {
             tokens: vec![],
         };
 
-        eprintln!("parse_identity: pre-visit: {:?}", input);
         while !stop_cond(input) {
-            ret.tokens.push(input.parse::<proc_macro2::TokenTree>()?);
+            match input.parse::<proc_macro2::TokenTree>() {
+                Ok(tt) => ret.tokens.push(tt),
+                Err(err) => return ParseOutcome::FatalError(err),
+            }
         }
         eprintln!("parse_identity: post-visit: {:?}", input);
-
-        if ret.tokens.is_empty() {
-            return Err(input.error("Empty Identity Section"))
-        }
-
-        Ok(ret)
+        ParseOutcome::Valid(ret)
     }
 
-    fn parse_concat(&self, input: syn::parse::ParseStream) -> syn::parse::Result<ConcatSection> {
+    fn parse_concat(&self, input: syn::parse::ParseStream) -> ParseOutcome<ConcatSection> {
         let start_cond = |input: syn::parse::ParseStream| -> bool {
             let fork = input.fork();
             if input.is_empty()
@@ -117,8 +125,14 @@ impl ParseContext {
         };
 
         let parse_concat_link = |input: syn::parse::ParseStream| -> syn::parse::Result<proc_macro2::TokenTree> {
-            input.parse::<syn::Token![~]>()?;
+
             let fork = input.fork();
+            fork.parse::<syn::Token![~]>()?;
+            if fork.is_empty() {
+                return Err(input.error("Expected Token after '~'"));
+            }
+
+            input.parse::<syn::Token![~]>()?;
             if fork.parse::<proc_macro2::Group>().is_ok() {
                 return Err(input.error("Expected Non-Group Token"));
             }
@@ -131,23 +145,26 @@ impl ParseContext {
 
         eprintln!("parse_concat: pre-visit: {:?}", input);
         if !start_cond(input) {
-            return Err(input.error("Failed to meet start conditions for concat section"));
+            // try parsing another way if possible
+            return ParseOutcome::RecoverableError;
         }
 
-        ret.tokens.push(input.parse::<proc_macro2::TokenTree>()?);
+        match input.parse::<proc_macro2::TokenTree>() {
+            Ok(tt) => ret.tokens.push(tt),
+            Err(err) => return ParseOutcome::FatalError(err),
+        }
         while !stop_cond(input) {
-            ret.tokens.push(parse_concat_link(input)?);
+            match parse_concat_link(input) {
+                Ok(tt) => ret.tokens.push(tt),
+                Err(err) => return ParseOutcome::FatalError(err),
+            }
         }
         eprintln!("parse_concat: post-visit: {:?}", input);
-
-        if ret.tokens.is_empty() {
-            return Err(input.error("Empty Identity Section"))
-        }
-
-        Ok(ret)
+        ParseOutcome::Valid(ret)
     }
 
-    fn parse_group(&self, input: syn::parse::ParseStream) -> syn::parse::Result<Group> {
+    fn parse_group(&self, input: syn::parse::ParseStream) -> ParseOutcome<Group> {
+
         let start_cond = |input: syn::parse::ParseStream| -> bool {
             let fork = input.fork();
             if input.is_empty()
@@ -159,14 +176,15 @@ impl ParseContext {
 
         eprintln!("parse_group: pre-visit: {:?}", input);
         if !start_cond(input) {
-            return Err(input.error("Failed to meet start conditions for group"));
+            // try parsing another way if possible
+            return ParseOutcome::RecoverableError;
         }
 
-        let g = input.parse::<proc_macro2::Group>()?;
+        let Ok(g) = input.parse::<proc_macro2::Group>() else {
+            return ParseOutcome::RecoverableError;
+        };
 
         let parser = |input: syn::parse::ParseStream| -> syn::parse::Result<Group> {
-            // eprintln!("parse_group: parser: self: {:?}", self);
-            // eprintln!("parse_group: parser: input: {:?}", input);
 
             let mut ret = Group {
                 sections: vec![],
@@ -174,29 +192,49 @@ impl ParseContext {
 
             while !input.is_empty() {
 
-                if let Ok(sect) = self.parse_identity(input) {
-                    ret.sections.push(SectionTree::Identity(sect));
-                } else if let Ok(sect) = self.parse_concat(input) {
-                    ret.sections.push(SectionTree::Concat(sect));
-                } else if let Ok(sect) = self.parse_group(input) {
-                    ret.sections.push(SectionTree::Group(sect));
-                } else {
-                    // couldn't parse as anything
-                    return Err(input.error("Failed to parse as any section"));
+                match self.parse_identity(input) {
+                    ParseOutcome::Valid(sect) => {
+                        ret.sections.push(SectionTree::Identity(sect));
+                        continue;
+                    }
+                    ParseOutcome::FatalError(err) => return Err(err),
+                    ParseOutcome::RecoverableError => {},
                 }
+
+                match self.parse_concat(input) {
+                    ParseOutcome::Valid(sect) => {
+                        ret.sections.push(SectionTree::Concat(sect));
+                        continue;
+                    }
+                    // ParseOutcome::Valid(sect) => ret.sections.push(SectionTree::Concat(sect)),
+                    ParseOutcome::FatalError(err) => return Err(err),
+                    ParseOutcome::RecoverableError => {},
+                }
+
+                match self.parse_group(input) {
+                    ParseOutcome::Valid(sect) => {
+                        ret.sections.push(SectionTree::Group(sect));
+                        continue;
+                    }
+                    // ParseOutcome::Valid(sect) => ret.sections.push(SectionTree::Group(sect)),
+                    ParseOutcome::FatalError(err) => return Err(err),
+                    ParseOutcome::RecoverableError => {},
+                }
+                
+                // No branch matched, Unrecoverable
+                return Err(input.error("Unable to Parse"));
             }
 
             Ok(ret)
         };
 
         let ret = parser.parse2(g.stream());
-
-        // ret.tokens.push(input.parse::<proc_macro2::TokenTree>()?);
-        // while !stop_cond(input) {
-        //     ret.tokens.push(parse_concat_link(input)?);
-        // }
         eprintln!("parse_group: post-visit: {:?}", input);
-        ret
+
+        match ret {
+            Ok(group) => ParseOutcome::Valid(group),
+            Err(error) => ParseOutcome::FatalError(error),
+        }
     }
 }
 
@@ -214,18 +252,26 @@ impl syn::parse::Parse for SeqTree {
         syn::braced!(body in input);
         let input = &body;
         
-        // parse something
+        match parse_ctx.parse_identity(input) {
+            ParseOutcome::Valid(ident_sect) => eprintln!("ident_sect: {:?}\n", ident_sect),
+            ParseOutcome::RecoverableError => eprintln!("Cannot parse as Identity Section"),
+            ParseOutcome::FatalError(err) => return Err(err),
+        }
+        
+        match parse_ctx.parse_concat(input) {
+            ParseOutcome::Valid(concat_sect) => eprintln!("concat_sect: {:?}\n", concat_sect),
+            ParseOutcome::RecoverableError => eprintln!("Cannot parse as Concat Section"),
+            ParseOutcome::FatalError(err) => return Err(err),
+        }
 
+        match parse_ctx.parse_group(input) {
+            ParseOutcome::Valid(group) => eprintln!("group: {:?}\n", group),
+            ParseOutcome::RecoverableError => eprintln!("Cannot parse as Group"),
+            ParseOutcome::FatalError(err) => return Err(err),
+        }
 
-        let ident_sect = parse_ctx.parse_identity(input)?;
-        eprintln!("ident_sect is {:?}\n", ident_sect);
-
-        // eprintln!("input is {:?}", input);
-        let ident_sect = parse_ctx.parse_concat(input)?;
-        eprintln!("concat_sect is {:?}\n", ident_sect);
-
-        let group = parse_ctx.parse_group(input)?;
-        eprintln!("group is {:?}\n", group);
+        // let group = parse_ctx.parse_group(input)?;
+        // eprintln!("group is {:?}\n", group);
 
         while !input.is_empty() {
             input.parse::<proc_macro2::TokenTree>()?;
