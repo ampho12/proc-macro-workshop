@@ -19,6 +19,7 @@ enum SectionTree {
 
     IdentityGroup(IdentityGroup),
     BaseNestRepeatGroup(BaseNestRepeatGroup),
+    BaseNoNestRepeatGroup(BaseNoNestRepeatGroup),
 }
 
 #[derive(Debug)]
@@ -56,6 +57,11 @@ struct RepeatGroup {
 
 #[derive(Debug)]
 struct BaseNestRepeatGroup {
+    sections: Vec<SectionTree>
+}
+
+#[derive(Debug)]
+struct BaseNoNestRepeatGroup {
     sections: Vec<SectionTree>
 }
 
@@ -708,11 +714,115 @@ impl ParseContext {
         };
 
         let ret = parser.parse2(g.stream());
+        eprintln!("parse_base_nest_repeat_group: post-visit: {:?}", input);
+
+        match ret {
+            Ok(repeat_group) => ParseOutcome::Valid(repeat_group),
+            Err(_error) => ParseOutcome::RecoverableError,
+        }
+    }
+
+    fn parse_base_no_nest_repeat_group(&self, input: syn::parse::ParseStream) -> ParseOutcome<BaseNoNestRepeatGroup> {
+
+        let start_cond = |input: syn::parse::ParseStream| -> bool {
+            let fork = input.fork();
+            if input.is_empty()
+            || fork.parse::<proc_macro2::Group>().is_err() {
+                return false;
+            }
+            true
+        };
+
+        eprintln!("parse_base_no_nest_repeat_group: pre-visit: {:?}", input);
+        if !start_cond(input) {
+            // try parsing another way if possible
+            return ParseOutcome::RecoverableError;
+        }
+
+        let Ok(g) = input.parse::<proc_macro2::Group>() else {
+            return ParseOutcome::RecoverableError;
+        };
+
+        let parser = |input: syn::parse::ParseStream| -> syn::parse::Result<BaseNoNestRepeatGroup> {
+
+            let mut ret = BaseNoNestRepeatGroup {
+                sections: vec![],
+            };
+
+            while !input.is_empty() {
+
+                let fork = &input.fork();
+                match self.parse_identity(fork) {
+                    ParseOutcome::Valid(_) => {
+                        if let ParseOutcome::Valid(sect) = self.parse_identity(input) {
+                            ret.sections.push(SectionTree::Identity(sect));
+                        } else {
+                            panic!("Fork parsed but input not parsed. This should never happen");
+                        }
+                        continue;
+                    }
+                    ParseOutcome::FatalError(err) => return Err(err),
+                    ParseOutcome::RecoverableError => {},
+                }
+
+                let fork = &input.fork();
+                match self.parse_concat(fork) {
+                    ParseOutcome::Valid(_) => {
+                        if let ParseOutcome::Valid(sect) = self.parse_concat(input) {
+                            ret.sections.push(SectionTree::Concat(sect));
+                        } else {
+                            panic!("Fork parsed but input not parsed. This should never happen");
+                        }
+                        continue;
+                    }
+                    // ParseOutcome::Valid(sect) => ret.sections.push(SectionTree::Concat(sect)),
+                    ParseOutcome::FatalError(err) => return Err(err),
+                    ParseOutcome::RecoverableError => {},
+                }
+
+                let fork = &input.fork();
+                match self.parse_replace(fork) {
+                    ParseOutcome::Valid(_) => {
+                        if let ParseOutcome::Valid(sect) = self.parse_replace(input) {
+                            ret.sections.push(SectionTree::Replace(sect));
+                        } else {
+                            panic!("Fork parsed but input not parsed. This should never happen");
+                        }
+                        continue;
+                    }
+                    // ParseOutcome::Valid(sect) => ret.sections.push(SectionTree::Concat(sect)),
+                    ParseOutcome::FatalError(err) => return Err(err),
+                    ParseOutcome::RecoverableError => {},
+                }
+
+                let fork = &input.fork();
+                match self.parse_group(fork) {
+                    ParseOutcome::Valid(_) => {
+                        if let ParseOutcome::Valid(sect) = self.parse_group(input) {
+                            ret.sections.push(SectionTree::Group(sect));
+                        } else {
+                            panic!("Fork parsed but input not parsed. This should never happen");
+                        }
+                        continue;
+                    }
+                    // ParseOutcome::Valid(sect) => ret.sections.push(SectionTree::Group(sect)),
+                    ParseOutcome::FatalError(err) => return Err(err),
+                    ParseOutcome::RecoverableError => {},
+                }
+                
+                // No branch matched, Unrecoverable
+                return Err(input.error("Unable to Parse"));
+            }
+
+            Ok(ret)
+        };
+
+        let ret = parser.parse2(g.stream());
         eprintln!("parse_repeat_group: post-visit: {:?}", input);
 
         match ret {
             Ok(repeat_group) => ParseOutcome::Valid(repeat_group),
-            Err(error) => ParseOutcome::FatalError(error),
+            Err(_error) => ParseOutcome::RecoverableError,
         }
     }
 }
@@ -734,8 +844,26 @@ impl syn::parse::Parse for SeqTree {
                     panic!("Fork parsed but input not parsed. This should never happen");
                 };
                 eprintln!("base_nest_repeat_group: {:?}\n", group);
+                return Ok(SeqTree{
+                    parse_ctx,
+                })
             },
             ParseOutcome::RecoverableError => eprintln!("Cannot parse as BaseNestRepeatGroup"),
+            ParseOutcome::FatalError(err) => return Err(err),
+        }
+
+        let fork = &input.fork();
+        match parse_ctx.parse_base_no_nest_repeat_group(fork) {
+            ParseOutcome::Valid(_) => {
+                let ParseOutcome::Valid(group) = parse_ctx.parse_base_no_nest_repeat_group(input) else {
+                    panic!("Fork parsed but input not parsed. This should never happen");
+                };
+                eprintln!("base_no_nest_repeat_group: {:?}\n", group);
+                return Ok(SeqTree{
+                    parse_ctx,
+                })
+            },
+            ParseOutcome::RecoverableError => eprintln!("Cannot parse as BaseNoNestRepeatGroup"),
             ParseOutcome::FatalError(err) => return Err(err),
         }
 

@@ -23,10 +23,14 @@
 use seq::seq;
 
 seq!(N in 0..8 {
-    a c #(
-        { a~N N ab}
-    )
-    d
+    a #()
 });
+
+// seq!(N in 0..8 {
+//     a c #(
+//         { a~N N ab}
+//     )
+//     d
+// });
 
 fn main() {}
