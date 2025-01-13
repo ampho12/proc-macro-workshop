@@ -22,18 +22,21 @@
 
 use seq::seq;
 
-seq!(N in 0..8 {
-    { lol {}}
-});
-
 // seq!(N in 0..8 {
-//     a c #(
-//         { a~N N ab}
-//     )
-//     #(
-//         hello N~N
-//     )
-//     d
+//     { lol {}}
 // });
+
+seq!(N in 0..8 {
+    a c {
+        kk
+    }
+    #(
+        { a~N N ab}
+    )
+    #(
+        hello N~N
+    )
+    d
+});
 
 fn main() {}
