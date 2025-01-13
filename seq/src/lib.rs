@@ -118,6 +118,51 @@ struct IdentitySection {
     tokens: Vec<proc_macro2::TokenTree>
 }
 
+impl PartialParser for IdentitySection {
+    type Output = Self;
+    fn parse(
+        ctx: &ParseContext,
+        input: syn::parse::ParseStream
+    ) -> syn::parse::Result<ParseOutcome<Self::Output>>
+    {
+        let stop_cond = |input: syn::parse::ParseStream| -> bool {
+            let fork = input.fork();
+            if input.is_empty()
+            || input.peek2(syn::Token![~]) 
+            || input.peek(syn::Token![#]) 
+            || fork.parse::<proc_macro2::Group>().is_ok() {
+                return true;
+            }
+
+            if let Ok(ident) = fork.parse::<proc_macro2::Ident>() {
+               ident == ctx.iter_ident
+            } else {
+                false
+            }
+        };
+
+        eprintln!("parse_identity: pre-visit: {:?}", input);
+        if stop_cond(input) {
+            // try parsing another way if possible
+            return Ok(ParseOutcome::RecoverableError);
+        }
+
+        let mut ret = IdentitySection {
+            tokens: vec![],
+        };
+
+        while !stop_cond(input) {
+            match input.parse::<proc_macro2::TokenTree>() {
+                Ok(tt) => ret.tokens.push(tt),
+                Err(err) => return Err(err),
+            }
+        }
+        eprintln!("parse_identity: post-visit: {:?}", input);
+        Ok(ParseOutcome::Valid(ret))
+
+    }
+}
+
 #[derive(Debug)]
 struct ConcatSection {
     tokens: Vec<proc_macro2::TokenTree>
@@ -425,18 +470,14 @@ impl ParseContext {
 
             while !input.is_empty() {
 
-                let fork = &input.fork();
-                match self.parse_identity(fork) {
-                    ParseOutcome::Valid(_) => {
-                        if let ParseOutcome::Valid(sect) = self.parse_identity(input) {
-                            ret.sections.push(SectionTree::Identity(sect));
-                        } else {
-                            panic!("Fork parsed but input not parsed. This should never happen");
-                        }
+                match try_extract::<IdentitySection>(self, input) {
+                    Ok(ParseOutcome::Valid(sect)) => {
+                        ret.sections.push(SectionTree::Identity(sect));
                         continue;
                     }
-                    ParseOutcome::FatalError(err) => return Err(err),
-                    ParseOutcome::RecoverableError => {},
+                    Ok(ParseOutcome::RecoverableError) => {},
+                    Ok(ParseOutcome::FatalError(err)) => return Err(err),
+                    Err(err) => return Err(err),
                 }
 
                 match try_extract::<ConcatSection>(self, input) {
@@ -458,36 +499,6 @@ impl ParseContext {
                     Ok(ParseOutcome::FatalError(err)) => return Err(err),
                     Err(err) => return Err(err),
                 }
-
-                // let fork = &input.fork();
-                // match self.parse_concat(fork) {
-                //     ParseOutcome::Valid(_) => {
-                //         if let ParseOutcome::Valid(sect) = self.parse_concat(input) {
-                //             ret.sections.push(SectionTree::Concat(sect));
-                //         } else {
-                //             panic!("Fork parsed but input not parsed. This should never happen");
-                //         }
-                //         continue;
-                //     }
-                //     // ParseOutcome::Valid(sect) => ret.sections.push(SectionTree::Concat(sect)),
-                //     ParseOutcome::FatalError(err) => return Err(err),
-                //     ParseOutcome::RecoverableError => {},
-                // }
-
-                // let fork = &input.fork();
-                // match self.parse_replace(fork) {
-                //     ParseOutcome::Valid(_) => {
-                //         if let ParseOutcome::Valid(sect) = self.parse_replace(input) {
-                //             ret.sections.push(SectionTree::Replace(sect));
-                //         } else {
-                //             panic!("Fork parsed but input not parsed. This should never happen");
-                //         }
-                //         continue;
-                //     }
-                //     // ParseOutcome::Valid(sect) => ret.sections.push(SectionTree::Concat(sect)),
-                //     ParseOutcome::FatalError(err) => return Err(err),
-                //     ParseOutcome::RecoverableError => {},
-                // }
 
                 let fork = &input.fork();
                 match self.parse_group(fork) {
@@ -549,18 +560,14 @@ impl ParseContext {
 
             while !input.is_empty() {
 
-                let fork = &input.fork();
-                match self.parse_identity(fork) {
-                    ParseOutcome::Valid(_) => {
-                        if let ParseOutcome::Valid(sect) = self.parse_identity(input) {
-                            ret.sections.push(SectionTree::Identity(sect));
-                        } else {
-                            panic!("Fork parsed but input not parsed. This should never happen");
-                        }
+                match try_extract::<IdentitySection>(self, input) {
+                    Ok(ParseOutcome::Valid(sect)) => {
+                        ret.sections.push(SectionTree::Identity(sect));
                         continue;
                     }
-                    ParseOutcome::FatalError(err) => return Err(err),
-                    ParseOutcome::RecoverableError => {},
+                    Ok(ParseOutcome::RecoverableError) => {},
+                    Ok(ParseOutcome::FatalError(err)) => return Err(err),
+                    Err(err) => return Err(err),
                 }
 
                 let fork = &input.fork();
@@ -623,18 +630,14 @@ impl ParseContext {
 
             while !input.is_empty() {
 
-                let fork = &input.fork();
-                match self.parse_identity(fork) {
-                    ParseOutcome::Valid(_) => {
-                        if let ParseOutcome::Valid(sect) = self.parse_identity(input) {
-                            ret.sections.push(SectionTree::Identity(sect));
-                        } else {
-                            panic!("Fork parsed but input not parsed. This should never happen");
-                        }
+                match try_extract::<IdentitySection>(self, input) {
+                    Ok(ParseOutcome::Valid(sect)) => {
+                        ret.sections.push(SectionTree::Identity(sect));
                         continue;
                     }
-                    ParseOutcome::FatalError(err) => return Err(err),
-                    ParseOutcome::RecoverableError => {},
+                    Ok(ParseOutcome::RecoverableError) => {},
+                    Ok(ParseOutcome::FatalError(err)) => return Err(err),
+                    Err(err) => return Err(err),
                 }
 
                 match try_extract::<ConcatSection>(self, input) {
@@ -744,18 +747,14 @@ impl ParseContext {
 
             while !input.is_empty() {
 
-                let fork = &input.fork();
-                match self.parse_identity(fork) {
-                    ParseOutcome::Valid(_) => {
-                        if let ParseOutcome::Valid(sect) = self.parse_identity(input) {
-                            ret.sections.push(SectionTree::Identity(sect));
-                        } else {
-                            panic!("Fork parsed but input not parsed. This should never happen");
-                        }
+                match try_extract::<IdentitySection>(self, input) {
+                    Ok(ParseOutcome::Valid(sect)) => {
+                        ret.sections.push(SectionTree::Identity(sect));
                         continue;
                     }
-                    ParseOutcome::FatalError(err) => return Err(err),
-                    ParseOutcome::RecoverableError => {},
+                    Ok(ParseOutcome::RecoverableError) => {},
+                    Ok(ParseOutcome::FatalError(err)) => return Err(err),
+                    Err(err) => return Err(err),
                 }
 
                 match try_extract::<ConcatSection>(self, input) {
@@ -838,18 +837,14 @@ impl ParseContext {
 
             while !input.is_empty() {
 
-                let fork = &input.fork();
-                match self.parse_identity(fork) {
-                    ParseOutcome::Valid(_) => {
-                        if let ParseOutcome::Valid(sect) = self.parse_identity(input) {
-                            ret.sections.push(SectionTree::Identity(sect));
-                        } else {
-                            panic!("Fork parsed but input not parsed. This should never happen");
-                        }
+                match try_extract::<IdentitySection>(self, input) {
+                    Ok(ParseOutcome::Valid(sect)) => {
+                        ret.sections.push(SectionTree::Identity(sect));
                         continue;
                     }
-                    ParseOutcome::FatalError(err) => return Err(err),
-                    ParseOutcome::RecoverableError => {},
+                    Ok(ParseOutcome::RecoverableError) => {},
+                    Ok(ParseOutcome::FatalError(err)) => return Err(err),
+                    Err(err) => return Err(err),
                 }
 
                 let fork = &input.fork();
@@ -927,18 +922,14 @@ impl ParseContext {
 
             while !input.is_empty() {
 
-                let fork = &input.fork();
-                match self.parse_identity(fork) {
-                    ParseOutcome::Valid(_) => {
-                        if let ParseOutcome::Valid(sect) = self.parse_identity(input) {
-                            ret.sections.push(SectionTree::Identity(sect));
-                        } else {
-                            panic!("Fork parsed but input not parsed. This should never happen");
-                        }
+                match try_extract::<IdentitySection>(self, input) {
+                    Ok(ParseOutcome::Valid(sect)) => {
+                        ret.sections.push(SectionTree::Identity(sect));
                         continue;
                     }
-                    ParseOutcome::FatalError(err) => return Err(err),
-                    ParseOutcome::RecoverableError => {},
+                    Ok(ParseOutcome::RecoverableError) => {},
+                    Ok(ParseOutcome::FatalError(err)) => return Err(err),
+                    Err(err) => return Err(err),
                 }
 
                 match try_extract::<ConcatSection>(self, input) {
