@@ -23,7 +23,9 @@
 use seq::seq;
 
 seq!(N in 0..8 {
-    a #()
+    a #(
+        ab a~N N
+    )
 });
 
 // seq!(N in 0..8 {

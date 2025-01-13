@@ -44,8 +44,73 @@ enum SectionTree {
     BaseNoNestRepeatGroup(BaseNoNestRepeatGroup),
 }
 
+enum ParseOutcome2<T> {
+    Valid(T),            // Fully valid result
+    RecoverableError,    // Invalid but recoverable, e.g. parse another way
+}
+
+
+fn try_extract<P>(
+    ctx: &ParseContext,
+    input: syn::parse::ParseStream
+) -> syn::parse::Result<ParseOutcome<P::Output>>
+where
+    P: PartialParser
+{
+    let fork = input.fork();
+    P::parse(ctx, &fork)?;
+    P::parse(ctx, input)
+}
+
+
+trait PartialParser {
+    type Output;
+    fn parse(
+        ctx: &ParseContext,
+        input: syn::parse::ParseStream
+    ) -> syn::parse::Result<ParseOutcome<Self::Output>>;
+}
+
+
 #[derive(Debug)]
 struct ReplaceSection;
+
+impl PartialParser for ReplaceSection {
+    type Output = Self;
+    fn parse(
+        ctx: &ParseContext,
+        input: syn::parse::ParseStream
+    ) -> syn::parse::Result<ParseOutcome<Self::Output>>
+    {
+        let stop_cond = |input: syn::parse::ParseStream| -> bool {
+            let fork = input.fork();
+            if input.is_empty()
+            || input.peek(syn::Token![#]) 
+            || input.peek2(syn::Token![~]) {
+                return true;
+            }
+
+            if let Ok(ident) = fork.parse::<proc_macro2::Ident>() {
+               ident != ctx.iter_ident
+            } else {
+                true
+            }
+        };
+
+        if stop_cond(input) {
+            Ok(ParseOutcome::RecoverableError)
+        } else {
+            match input.parse::<proc_macro2::TokenTree>() {
+                Ok(_tt) => Ok(ParseOutcome::Valid(ReplaceSection {})),
+                Err(err) => Err(err),
+            }
+        }
+
+    }
+}
+
+
+
 
 #[derive(Debug)]
 struct IdentitySection {
@@ -496,20 +561,27 @@ impl ParseContext {
                     ParseOutcome::RecoverableError => {},
                 }
 
-                let fork = &input.fork();
-                match self.parse_replace(fork) {
-                    ParseOutcome::Valid(_) => {
-                        if let ParseOutcome::Valid(sect) = self.parse_replace(input) {
-                            ret.sections.push(SectionTree::Replace(sect));
-                        } else {
-                            panic!("Fork parsed but input not parsed. This should never happen");
-                        }
-                        continue;
-                    }
-                    // ParseOutcome::Valid(sect) => ret.sections.push(SectionTree::Concat(sect)),
-                    ParseOutcome::FatalError(err) => return Err(err),
-                    ParseOutcome::RecoverableError => {},
+                match try_extract::<ReplaceSection>(self, input) {
+                    Ok(ParseOutcome::Valid(sect)) => ret.sections.push(SectionTree::Replace(sect)),
+                    Ok(ParseOutcome::RecoverableError) => {},
+                    Ok(ParseOutcome::FatalError(err)) => return Err(err),
+                    Err(err) => return Err(err),
                 }
+
+                // let fork = &input.fork();
+                // match self.parse_replace(fork) {
+                //     ParseOutcome::Valid(_) => {
+                //         if let ParseOutcome::Valid(sect) = self.parse_replace(input) {
+                //             ret.sections.push(SectionTree::Replace(sect));
+                //         } else {
+                //             panic!("Fork parsed but input not parsed. This should never happen");
+                //         }
+                //         continue;
+                //     }
+                //     // ParseOutcome::Valid(sect) => ret.sections.push(SectionTree::Concat(sect)),
+                //     ParseOutcome::FatalError(err) => return Err(err),
+                //     ParseOutcome::RecoverableError => {},
+                // }
 
                 let fork = &input.fork();
                 match self.parse_no_nest_repeat_group(fork) {
