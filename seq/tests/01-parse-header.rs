@@ -23,9 +23,7 @@
 use seq::seq;
 
 seq!(N in 0..8 {
-    N {
-        hello n~N~N~~~N
-    }
+    { lol {}}
 });
 
 // seq!(N in 0..8 {
