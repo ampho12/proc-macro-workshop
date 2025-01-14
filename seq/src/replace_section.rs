@@ -2,10 +2,27 @@ use crate::{
     ParseOutcome,
     PartialParser,
     ParseContext,
+    ExpandContext,
+    Expand,
 };
 
+use quote::quote;
+
+#[derive(Clone)]
 #[derive(Debug)]
 pub struct ReplaceSection;
+
+impl Expand for ReplaceSection {
+    fn expand(self, ctx: &ExpandContext) -> proc_macro2::TokenStream {
+        // let ret_it = vec![ctx.target.clone()].into_iter();
+        let tt = ctx.target.clone();
+        quote! {
+            #tt
+            // #(#ret_it)*
+        }
+    }
+}
+
 
 impl PartialParser for ReplaceSection {
     type Output = Self;

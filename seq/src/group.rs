@@ -2,10 +2,13 @@ use crate::{
     ParseOutcome,
     PartialParser,
     ParseContext,
+    ExpandContext,
+    Expand,
     SectionTree,
     try_extract_section_tree
 };
 
+use quote::quote;
 
 use crate::concat_section::ConcatSection;
 use crate::identity_section::IdentitySection;
@@ -13,9 +16,27 @@ use crate::replace_section::ReplaceSection;
 
 use syn::parse::Parser;
 
+#[derive(Clone)]
 #[derive(Debug)]
 pub struct Group {
-    sections: Vec<SectionTree>
+    sections: Vec<SectionTree>,
+    delimiter: proc_macro2::Delimiter,
+}
+
+impl Expand for Group {
+    fn expand(self, ctx: &ExpandContext) -> proc_macro2::TokenStream {
+        let ret_it = self.sections.into_iter().flat_map(|sect| {
+            sect.expand(ctx).into_iter()
+        });
+
+        let ret = proc_macro2::TokenTree::Group(proc_macro2::Group::new(
+            self.delimiter,
+            quote! {
+                #(#ret_it)*
+            }
+        ));
+        quote! { #ret }
+    }
 }
 
 impl PartialParser for Group {
@@ -49,6 +70,7 @@ impl PartialParser for Group {
 
             let mut ret = Group {
                 sections: vec![],
+                delimiter: proc_macro2::Delimiter::None,
             };
 
             let parsers = [
@@ -83,7 +105,10 @@ impl PartialParser for Group {
         let ret = parser.parse2(token_stream);
         eprintln!("parse_group: post-visit: {:?}", input);
         match ret {
-            Ok(group) => Ok(ParseOutcome::Valid(group)),
+            Ok(mut group) => {
+                group.delimiter = g.delimiter();
+                Ok(ParseOutcome::Valid(group))
+            }
             Err(error) => Err(error),
         }
     }

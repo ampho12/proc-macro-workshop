@@ -23,20 +23,32 @@
 use seq::seq;
 
 // seq!(N in 0..8 {
-//     { lol {}}
+//     lol~N~N~lol2~hello
+// });
+// seq!(N in 0..3 {
+//     (N)
 // });
 
-seq!(N in 0..8 {
-    a c {
+seq!(N in 0..4 {
+    a c (
         kk
-    }
-    #(
-        { a~N N ab}
     )
     #(
-        hello N~N
+            lol~N~N
     )
-    d
 });
+
+// seq!(N in 0..8 {
+//     a c {
+//         kk
+//     }
+//     #(
+//         { a~N N ab}
+//     )
+//     #(
+//         hello N~N
+//     )
+//     d
+// });
 
 fn main() {}

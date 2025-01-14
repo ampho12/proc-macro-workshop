@@ -3,9 +3,12 @@ use crate::{
     PartialParser,
     ParseContext,
     SectionTree,
+    ExpandContext,
+    Expand,
     try_extract_section_tree
 };
 
+use quote::quote;
 
 use crate::identity_section::IdentitySection;
 use crate::concat_section::ConcatSection;
@@ -15,9 +18,29 @@ use crate::group::Group;
 use syn::parse::Parser;
 
 
+#[derive(Clone)]
 #[derive(Debug)]
 pub struct BaseNoNestRepeatGroup {
     sections: Vec<SectionTree>
+}
+
+impl Expand for BaseNoNestRepeatGroup {
+    fn expand(self, ctx: &ExpandContext) -> proc_macro2::TokenStream {
+
+        let ret_it = (ctx.start..ctx.end).flat_map(|n| {
+            let mut expand_ctx: ExpandContext = ctx.clone();
+            expand_ctx.target = proc_macro2::TokenTree::Literal(
+                proc_macro2::Literal::usize_unsuffixed(n)
+            );
+            self.sections.clone().into_iter().flat_map(move |sect| {
+                sect.expand(&expand_ctx).into_iter()
+            })
+        });
+
+        quote! {
+            #(#ret_it)*
+        }
+    }
 }
 
 impl PartialParser for BaseNoNestRepeatGroup {
@@ -81,7 +104,7 @@ impl PartialParser for BaseNoNestRepeatGroup {
         };
 
         let ret = parser.parse2(g.stream());
-        eprintln!("parse_repeat_group: post-visit: {:?}", input);
+        eprintln!("parse_base_no_nest_repeat_group: post-visit: {:?}", input);
 
         match ret {
             Ok(group) => Ok(ParseOutcome::Valid(group)),

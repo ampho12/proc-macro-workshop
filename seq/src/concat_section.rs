@@ -2,12 +2,48 @@ use crate::{
     ParseOutcome,
     PartialParser,
     ParseContext,
+    ExpandContext,
+    Expand,
 };
 
+use quote::quote;
 
+#[derive(Clone)]
 #[derive(Debug)]
 pub struct ConcatSection {
     tokens: Vec<proc_macro2::TokenTree>
+}
+
+impl Expand for ConcatSection {
+    fn expand(self, ctx: &ExpandContext) -> proc_macro2::TokenStream {
+
+        let replaced = self.tokens.into_iter().map(|token| {
+            match token {
+                proc_macro2::TokenTree::Ident(ref ident) => {
+                    if *ident == ctx.iter_ident {
+                        let mut ret = ctx.target.clone();
+                        ret.set_span(ident.span());
+                        ret
+                    } else {
+                        token
+                    }
+                },
+                _ => token,
+            }
+        });
+
+        let concat:String = replaced.into_iter().flat_map(|tt| {
+            // tt.to_string().chars().collect::<Vec<char>>()
+            tt.to_string().chars().collect::<Vec<char>>().into_iter()
+        }).collect();
+        // eprintln!("concat: {:?}", concat);
+        let ret = proc_macro2::TokenTree::Ident(
+            proc_macro2::Ident::new(concat.as_str(), proc_macro2::Span::call_site())
+        );
+        quote! {
+            #ret
+        }
+    }
 }
 
 impl PartialParser for ConcatSection {

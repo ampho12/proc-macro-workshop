@@ -27,6 +27,7 @@ enum ParseOutcome<T> {
     RecoverableError,    // Invalid but recoverable, e.g. parse another way
 }
 
+#[derive(Clone)]
 #[derive(Debug)]
 enum SectionTree {
     Identity(IdentitySection),
@@ -102,7 +103,9 @@ where
     P: PartialParser
 {
     let fork = input.fork();
-    P::parse(ctx, &fork)?;
+    if let ParseOutcome::RecoverableError = P::parse(ctx, &fork)? {
+        return Ok(ParseOutcome::RecoverableError);
+    }
     P::parse(ctx, input)
 }
 
@@ -128,6 +131,37 @@ trait PartialParser {
         ctx: &ParseContext,
         input: syn::parse::ParseStream
     ) -> syn::parse::Result<ParseOutcome<Self::Output>>;
+}
+
+trait Expand {
+    fn expand(self, ctx: &ExpandContext) -> proc_macro2::TokenStream;
+}
+
+
+impl Expand for SectionTree {
+    fn expand(self, ctx: &ExpandContext) -> proc_macro2::TokenStream {
+        match self {
+            SectionTree::Identity(sect) => sect.expand(ctx),
+            SectionTree::IdentityGroup(sect) => sect.expand(ctx),
+            SectionTree::Group(sect) => sect.expand(ctx),
+            SectionTree::Concat(sect) => sect.expand(ctx),
+            SectionTree::Replace(sect) => sect.expand(ctx),
+            SectionTree::BaseNoNestRepeatGroup(sect) => sect.expand(ctx),
+            SectionTree::NoNestRepeatGroup(sect) => sect.expand(ctx),
+            SectionTree::BaseNestRepeatGroup(sect) => sect.expand(ctx),
+            SectionTree::RepeatGroup(sect) => sect.expand(ctx),
+        }
+    }
+
+}
+
+#[derive(Clone)]
+#[derive(Debug)]
+struct ExpandContext {
+    target: proc_macro2::TokenTree,
+    iter_ident: proc_macro2::Ident,
+    start: usize,
+    end: usize,
 }
 
 #[derive(Debug)]
@@ -182,6 +216,16 @@ impl syn::parse::Parse for SeqTree {
         match try_extract::<BaseNestRepeatGroup>(&parse_ctx, input) {
             Ok(ParseOutcome::Valid(sect)) => {
                 eprintln!("base_nest_repeat_group: {:?}\n", sect);
+                let expand_context = ExpandContext {
+                    target: proc_macro2::TokenTree::Literal(
+                        proc_macro2::Literal::usize_unsuffixed(69)
+                    ),
+                    iter_ident: parse_ctx.iter_ident.clone(),
+                    start: parse_ctx.start,
+                    end: parse_ctx.end,
+                };
+                let ret = sect.expand(&expand_context);
+                eprintln!("base_nest_repeat_group expanded : {:?}\n", ret);
                 return Ok(SeqTree{
                     parse_ctx,
                 })
@@ -193,6 +237,17 @@ impl syn::parse::Parse for SeqTree {
         match try_extract::<BaseNoNestRepeatGroup>(&parse_ctx, input) {
             Ok(ParseOutcome::Valid(sect)) => {
                 eprintln!("base_no_nest_repeat_group: {:?}\n", sect);
+                let expand_context = ExpandContext {
+                    target: proc_macro2::TokenTree::Literal(
+                        proc_macro2::Literal::usize_unsuffixed(69)
+                    ),
+                    iter_ident: parse_ctx.iter_ident.clone(),
+                    start: parse_ctx.start,
+                    end: parse_ctx.end,
+                };
+                let ret = sect.expand(&expand_context);
+                eprintln!("base_no_nest_repeat_group expanded : {:?}\n", ret);
+
                 return Ok(SeqTree{
                     parse_ctx,
                 })

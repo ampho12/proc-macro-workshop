@@ -3,17 +3,38 @@ use crate::{
     PartialParser,
     ParseContext,
     SectionTree,
+    ExpandContext,
+    Expand,
     try_extract_section_tree
 };
 
+use quote::quote;
 
 use crate::identity_section::IdentitySection;
 
 use syn::parse::Parser;
 
+#[derive(Clone)]
 #[derive(Debug)]
 pub struct IdentityGroup {
-    sections: Vec<SectionTree>
+    sections: Vec<SectionTree>,
+    delimiter: proc_macro2::Delimiter,
+}
+
+impl Expand for IdentityGroup {
+    fn expand(self, ctx: &ExpandContext) -> proc_macro2::TokenStream {
+        let ret_it = self.sections.into_iter().flat_map(|sect| {
+            sect.expand(ctx).into_iter()
+        });
+
+        let ret = proc_macro2::TokenTree::Group(proc_macro2::Group::new(
+            self.delimiter,
+            quote! {
+                #(#ret_it)*
+            }
+        ));
+        quote! { #ret }
+    }
 }
 
 impl PartialParser for IdentityGroup {
@@ -46,6 +67,7 @@ impl PartialParser for IdentityGroup {
 
             let mut ret = IdentityGroup {
                 sections: vec![],
+                delimiter: proc_macro2::Delimiter::None,
             };
 
             let parsers = [
@@ -78,7 +100,10 @@ impl PartialParser for IdentityGroup {
         eprintln!("parse_group: post-visit: {:?}", input);
 
         match ret {
-            Ok(group) => Ok(ParseOutcome::Valid(group)),
+            Ok(mut group) => {
+                group.delimiter = g.delimiter();
+                Ok(ParseOutcome::Valid(group))
+            }
             Err(error) => Err(error),
         }
     }

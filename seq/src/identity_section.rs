@@ -2,11 +2,25 @@ use crate::{
     ParseOutcome,
     PartialParser,
     ParseContext,
+    ExpandContext,
+    Expand,
 };
 
+#[derive(Clone)]
 #[derive(Debug)]
 pub struct IdentitySection {
     tokens: Vec<proc_macro2::TokenTree>
+}
+
+use quote::quote;
+
+impl Expand for IdentitySection {
+    fn expand(self, _ctx: &ExpandContext) -> proc_macro2::TokenStream {
+        let ret_it = self.tokens.into_iter();
+        quote! {
+            #(#ret_it)*
+        }
+    }
 }
 
 impl PartialParser for IdentitySection {

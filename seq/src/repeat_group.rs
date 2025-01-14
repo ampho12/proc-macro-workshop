@@ -3,9 +3,12 @@ use crate::{
     PartialParser,
     ParseContext,
     SectionTree,
+    ExpandContext,
+    Expand,
     try_extract_section_tree
 };
 
+use quote::quote;
 
 use crate::concat_section::ConcatSection;
 use crate::identity_section::IdentitySection;
@@ -14,9 +17,29 @@ use crate::no_nest_repeat_group::NoNestRepeatGroup;
 
 use syn::parse::Parser;
 
+#[derive(Clone)]
 #[derive(Debug)]
 pub struct RepeatGroup {
     sections: Vec<SectionTree>
+}
+
+impl Expand for RepeatGroup {
+    fn expand(self, ctx: &ExpandContext) -> proc_macro2::TokenStream {
+
+        let ret_it = (ctx.start..ctx.end).flat_map(|n| {
+            let mut expand_ctx: ExpandContext = ctx.clone();
+            expand_ctx.target = proc_macro2::TokenTree::Literal(
+                proc_macro2::Literal::usize_unsuffixed(n)
+            );
+            self.sections.clone().into_iter().flat_map(move |sect| {
+                sect.expand(&expand_ctx).into_iter()
+            })
+        });
+
+        quote! {
+            #(#ret_it)*
+        }
+    }
 }
 
 impl PartialParser for RepeatGroup {
