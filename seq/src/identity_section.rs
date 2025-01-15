@@ -34,7 +34,7 @@ impl PartialParser for IdentitySection {
             let fork = input.fork();
             if input.is_empty()
             || input.peek2(syn::Token![~]) 
-            || input.peek(syn::Token![#]) 
+            || (input.peek(syn::Token![#]) && input.peek2(syn::token::Paren))
             || fork.parse::<proc_macro2::Group>().is_ok() {
                 return true;
             }
@@ -46,7 +46,7 @@ impl PartialParser for IdentitySection {
             }
         };
 
-        eprintln!("parse_identity: pre-visit: {:?}", input);
+        // eprintln!("parse_identity: pre-visit: {:?}", input);
         if stop_cond(input) {
             // try parsing another way if possible
             return Ok(ParseOutcome::RecoverableError);
@@ -62,7 +62,7 @@ impl PartialParser for IdentitySection {
                 Err(err) => return Err(err),
             }
         }
-        eprintln!("parse_identity: post-visit: {:?}", input);
+        // eprintln!("parse_identity: post-visit: {:?}", input);
         Ok(ParseOutcome::Valid(ret))
 
     }

@@ -8,18 +8,18 @@ publish = false
 [lib]
 proc-macro = true
 
-# [[test]]
-# name = "tests"
-# path = "tests/progress.rs"
-
 [[test]]
-name = "01"
-path = "tests/01-parse-header.rs"
+name = "tests"
+path = "tests/progress.rs"
 
+# [[test]]
+# name = "01"
+# path = "tests/01-parse-header.rs"
+# 
 # [[test]]
 # name = "02"
 # path = "tests/02-parse-body.rs"
-
+# 
 # [[test]]
 # name = "03"
 # path = "tests/03-expand-four-errors.rs"
@@ -31,6 +31,10 @@ path = "tests/01-parse-header.rs"
 # [[test]]
 # name = "05"
 # path = "tests/05-repeat-section.rs"
+
+# [[test]]
+# name = "06"
+# path = "tests/06-init-array.rs"
 
 [dev-dependencies]
 trybuild = { version = "1.0.49", features = ["diff"] }

@@ -22,6 +22,7 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::parse::Parser;
 
+#[derive(Debug)]
 enum ParseOutcome<T> {
     Valid(T),            // Fully valid result
     RecoverableError,    // Invalid but recoverable, e.g. parse another way
@@ -100,13 +101,18 @@ fn try_extract<P>(
     input: syn::parse::ParseStream
 ) -> syn::parse::Result<ParseOutcome<P::Output>>
 where
-    P: PartialParser
+    P: PartialParser, <P as PartialParser>::Output: std::fmt::Debug,
 {
     let fork = input.fork();
     if let ParseOutcome::RecoverableError = P::parse(ctx, &fork)? {
         return Ok(ParseOutcome::RecoverableError);
     }
-    P::parse(ctx, input)
+    let ret = P::parse(ctx, input)?;
+
+    if let ParseOutcome::Valid(ref outcome) = ret {
+        eprintln!("parsed: {:?}", outcome);
+    }
+    Ok(ret)
 }
 
 fn try_extract_section_tree<T>(
@@ -115,7 +121,7 @@ fn try_extract_section_tree<T>(
 ) -> syn::parse::Result<ParseOutcome<SectionTree>>
 where 
     T: PartialParser,
-    T::Output: Into<SectionTree>,
+    T::Output: Into<SectionTree> + std::fmt::Debug,
 {
     try_extract::<T>(ctx, input).map(|outcome| { 
         match outcome {
@@ -205,7 +211,25 @@ impl syn::parse::Parse for ParseContext {
 #[derive(Debug)]
 struct SeqTree {
     parse_ctx: ParseContext,
+    base_section: SectionTree,
 }
+
+impl SeqTree {
+    fn expand(self) -> proc_macro2::TokenStream {
+
+        let expand_context = ExpandContext {
+            target: proc_macro2::TokenTree::Literal(
+                proc_macro2::Literal::usize_unsuffixed(69)
+            ),
+            iter_ident: self.parse_ctx.iter_ident.clone(),
+            start: self.parse_ctx.start,
+            end: self.parse_ctx.end,
+        };
+
+        self.base_section.expand(&expand_context)
+    }
+}
+
 
 impl syn::parse::Parse for SeqTree {
     fn parse(input: syn::parse::ParseStream) -> syn::parse::Result<Self> {
@@ -216,18 +240,9 @@ impl syn::parse::Parse for SeqTree {
         match try_extract::<BaseNestRepeatGroup>(&parse_ctx, input) {
             Ok(ParseOutcome::Valid(sect)) => {
                 eprintln!("base_nest_repeat_group: {:?}\n", sect);
-                let expand_context = ExpandContext {
-                    target: proc_macro2::TokenTree::Literal(
-                        proc_macro2::Literal::usize_unsuffixed(69)
-                    ),
-                    iter_ident: parse_ctx.iter_ident.clone(),
-                    start: parse_ctx.start,
-                    end: parse_ctx.end,
-                };
-                let ret = sect.expand(&expand_context);
-                eprintln!("base_nest_repeat_group expanded : {:?}\n", ret);
                 return Ok(SeqTree{
                     parse_ctx,
+                    base_section: sect.into(),
                 })
             }
             Ok(ParseOutcome::RecoverableError) => {},
@@ -237,19 +252,9 @@ impl syn::parse::Parse for SeqTree {
         match try_extract::<BaseNoNestRepeatGroup>(&parse_ctx, input) {
             Ok(ParseOutcome::Valid(sect)) => {
                 eprintln!("base_no_nest_repeat_group: {:?}\n", sect);
-                let expand_context = ExpandContext {
-                    target: proc_macro2::TokenTree::Literal(
-                        proc_macro2::Literal::usize_unsuffixed(69)
-                    ),
-                    iter_ident: parse_ctx.iter_ident.clone(),
-                    start: parse_ctx.start,
-                    end: parse_ctx.end,
-                };
-                let ret = sect.expand(&expand_context);
-                eprintln!("base_no_nest_repeat_group expanded : {:?}\n", ret);
-
                 return Ok(SeqTree{
                     parse_ctx,
+                    base_section: sect.into(),
                 })
             }
             Ok(ParseOutcome::RecoverableError) => {},
@@ -266,6 +271,8 @@ pub fn seq(input: TokenStream) -> TokenStream {
     // let input = input.parse::<syn::parse::ParseStream>()?;
     
     let seq_tree = syn::parse_macro_input!(input as SeqTree);
+
+    seq_tree.expand().into()
     
     // let parse_ctx = syn::parse::<ParseContext>(input);
     // eprintln!("{:?}", seq_tree);
@@ -291,5 +298,5 @@ pub fn seq(input: TokenStream) -> TokenStream {
 
     // let parse_ctx: ParseContext = input.parse()?;
     
-    TokenStream::new()
+    // TokenStream::new()
 }

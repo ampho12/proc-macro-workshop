@@ -30,6 +30,13 @@
 
 use seq::seq;
 
+// seq!(N in 0..2 {
+//     #[derive(Copy, Clone, PartialEq, Debug)]
+//     enum Lol {
+//         #(hello~N,)
+//     }
+// });
+
 seq!(N in 0..16 {
     #[derive(Copy, Clone, PartialEq, Debug)]
     enum Interrupt {

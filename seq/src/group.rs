@@ -21,6 +21,7 @@ use syn::parse::Parser;
 pub struct Group {
     sections: Vec<SectionTree>,
     delimiter: proc_macro2::Delimiter,
+    span: proc_macro2::Span,
 }
 
 impl Expand for Group {
@@ -29,12 +30,13 @@ impl Expand for Group {
             sect.expand(ctx).into_iter()
         });
 
-        let ret = proc_macro2::TokenTree::Group(proc_macro2::Group::new(
+        let mut ret = proc_macro2::TokenTree::Group(proc_macro2::Group::new(
             self.delimiter,
             quote! {
                 #(#ret_it)*
             }
         ));
+        ret.set_span(self.span);
         quote! { #ret }
     }
 }
@@ -71,6 +73,7 @@ impl PartialParser for Group {
             let mut ret = Group {
                 sections: vec![],
                 delimiter: proc_macro2::Delimiter::None,
+                span: proc_macro2::Span::call_site(),
             };
 
             let parsers = [
@@ -107,6 +110,7 @@ impl PartialParser for Group {
         match ret {
             Ok(mut group) => {
                 group.delimiter = g.delimiter();
+                group.span = g.span();
                 Ok(ParseOutcome::Valid(group))
             }
             Err(error) => Err(error),

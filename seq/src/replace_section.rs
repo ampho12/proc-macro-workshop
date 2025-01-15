@@ -46,7 +46,7 @@ impl PartialParser for ReplaceSection {
             }
         };
 
-        eprintln!("parse_replace: pre-visit: {:?}", input);
+        // eprintln!("parse_replace: pre-visit: {:?}", input);
         if stop_cond(input) {
             Ok(ParseOutcome::RecoverableError)
         } else {

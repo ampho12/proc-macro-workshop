@@ -74,13 +74,19 @@ impl PartialParser for RepeatGroup {
             // try parsing another way if possible
             return Ok(ParseOutcome::RecoverableError);
         }
-        let _ = input.parse::<syn::Token![#]>();
+        input.parse::<syn::Token![#]>()?;
 
-        let Ok(g) = input.parse::<proc_macro2::Group>() else {
-            return Ok(ParseOutcome::RecoverableError);
-        };
+        let fork = input.fork();
+        fork.parse::<proc_macro2::Group>()?;
 
-        let parser = |input: syn::parse::ParseStream| -> syn::parse::Result<RepeatGroup> {
+        if fork.is_empty() || !fork.peek(syn::Token![*]) {
+            return Err(input.error("Expected '*'"));
+        }
+
+        let g = input.parse::<proc_macro2::Group>()?;
+        let _ = input.parse::<syn::Token![*]>()?;
+
+        let parser = |input: syn::parse::ParseStream| -> syn::parse::Result<ParseOutcome<RepeatGroup>> {
 
             let mut ret = RepeatGroup {
                 sections: vec![],
@@ -111,15 +117,16 @@ impl PartialParser for RepeatGroup {
                 }
             }
 
-            Ok(ret)
+            Ok(ParseOutcome::Valid(ret))
         };
 
         let ret = parser.parse2(g.stream());
         eprintln!("parse_repeat_group: post-visit: {:?}", input);
+        ret
 
-        match ret {
-            Ok(repeat_group) => Ok(ParseOutcome::Valid(repeat_group)),
-            Err(error) => Err(error),
-        }
+        // match ret {
+        //     Ok(repeat_group) => Ok(ParseOutcome::Valid(repeat_group)),
+        //     Err(error) => Err(error),
+        // }
     }
 }

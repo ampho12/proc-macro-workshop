@@ -11,6 +11,7 @@ use crate::{
 use quote::quote;
 
 use crate::identity_section::IdentitySection;
+use crate::repeat_group::RepeatGroup;
 
 use syn::parse::Parser;
 
@@ -19,6 +20,7 @@ use syn::parse::Parser;
 pub struct IdentityGroup {
     sections: Vec<SectionTree>,
     delimiter: proc_macro2::Delimiter,
+    span: proc_macro2::Span,
 }
 
 impl Expand for IdentityGroup {
@@ -27,13 +29,16 @@ impl Expand for IdentityGroup {
             sect.expand(ctx).into_iter()
         });
 
-        let ret = proc_macro2::TokenTree::Group(proc_macro2::Group::new(
+        let mut ret = proc_macro2::TokenTree::Group(proc_macro2::Group::new(
             self.delimiter,
             quote! {
                 #(#ret_it)*
             }
         ));
-        quote! { #ret }
+        ret.set_span(self.span);
+        let ret = quote! { #ret };
+        eprintln!("returning : {:?}", ret);
+        ret
     }
 }
 
@@ -53,25 +58,23 @@ impl PartialParser for IdentityGroup {
             true
         };
 
-        eprintln!("identity_group: pre-visit: {:?}", input);
         if !start_cond(input) {
             // try parsing another way if possible
             return Ok(ParseOutcome::RecoverableError);
         }
 
-        let Ok(g) = input.parse::<proc_macro2::Group>() else {
-            return Ok(ParseOutcome::RecoverableError);
-        };
 
-        let parser = |input: syn::parse::ParseStream| -> syn::parse::Result<IdentityGroup> {
+        let parser = |input: syn::parse::ParseStream| -> syn::parse::Result<ParseOutcome<IdentityGroup>> {
 
             let mut ret = IdentityGroup {
                 sections: vec![],
                 delimiter: proc_macro2::Delimiter::None,
+                span: proc_macro2::Span::call_site(),
             };
 
             let parsers = [
                 try_extract_section_tree::<IdentitySection>,
+                try_extract_section_tree::<RepeatGroup>,
                 try_extract_section_tree::<IdentityGroup>,
             ];
 
@@ -89,22 +92,52 @@ impl PartialParser for IdentityGroup {
                     }
                 }
                 if !parsed_smth {
-                    return Err(input.error("IdentityGroup: Unable to Parse"));
+                    // cannot be parsed as idenitity group but can be as other groups
+                    // must empty stream before returning
+                    while !input.is_empty() {
+                        let _ = input.parse::<proc_macro2::TokenTree>();
+                    }
+                    return Ok(ParseOutcome::RecoverableError);
+                    // return Err(input.error("IdentityGroup: Unable to Parse"));
                 }
             }
 
-            Ok(ret)
+            Ok(ParseOutcome::Valid(ret))
+        };
+
+        // at this point, we have a group. We don't know if we can fully parse it
+        // try to parse a forked stream
+        let fork = input.fork();
+        let Ok(g) = fork.parse::<proc_macro2::Group>() else {
+            return Ok(ParseOutcome::RecoverableError);
+        };
+
+        eprintln!("here 1");
+        let ret = parser.parse2(g.stream());
+        eprintln!("ret: {:?}", ret);
+
+        if let ParseOutcome::RecoverableError = ret? {
+            eprintln!("got recoverable error!");
+        }
+        eprintln!("here 3");
+        
+
+
+        let Ok(g) = input.parse::<proc_macro2::Group>() else {
+            return Ok(ParseOutcome::RecoverableError);
         };
 
         let ret = parser.parse2(g.stream());
-        eprintln!("parse_group: post-visit: {:?}", input);
 
-        match ret {
-            Ok(mut group) => {
-                group.delimiter = g.delimiter();
-                Ok(ParseOutcome::Valid(group))
+        ret.map(|outcome| {
+            match outcome {
+                ParseOutcome::Valid(mut group) => {
+                    group.delimiter = g.delimiter();
+                    group.span = g.span();
+                    ParseOutcome::Valid(group)
+                }
+                ParseOutcome::RecoverableError => ParseOutcome::RecoverableError,
             }
-            Err(error) => Err(error),
-        }
+        })
     }
 }

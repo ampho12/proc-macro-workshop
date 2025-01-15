@@ -95,7 +95,7 @@ impl PartialParser for ConcatSection {
             tokens: vec![],
         };
 
-        eprintln!("parse_concat: pre-visit: {:?}", input);
+        // eprintln!("parse_concat: pre-visit: {:?}", input);
         if !start_cond(input) {
             // try parsing another way if possible
             return Ok(ParseOutcome::RecoverableError);
@@ -112,7 +112,7 @@ impl PartialParser for ConcatSection {
                 Err(err) => return Err(err),
             }
         }
-        eprintln!("parse_concat: post-visit: {:?}", input);
+        // eprintln!("parse_concat: post-visit: {:?}", input);
         Ok(ParseOutcome::Valid(ret))
     }
 }

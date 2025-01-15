@@ -19,7 +19,9 @@ use syn::parse::Parser;
 #[derive(Clone)]
 #[derive(Debug)]
 pub struct NoNestRepeatGroup {
-    sections: Vec<SectionTree>
+    sections: Vec<SectionTree>,
+    delimiter: proc_macro2::Delimiter,
+    span: proc_macro2::Span,
 }
 
 impl Expand for NoNestRepeatGroup {
@@ -28,9 +30,17 @@ impl Expand for NoNestRepeatGroup {
             sect.expand(ctx).into_iter()
         });
 
-        quote! {
-            #(#ret_it)*
-        }
+        let mut ret = proc_macro2::TokenTree::Group(proc_macro2::Group::new(
+            self.delimiter,
+            quote! {
+                #(#ret_it)*
+            }
+        ));
+        ret.set_span(self.span);
+        quote! { #ret }
+        // quote! {
+        //     #(#ret_it)*
+        // }
     }
 }
 
@@ -64,6 +74,8 @@ impl PartialParser for NoNestRepeatGroup {
 
             let mut ret = NoNestRepeatGroup {
                 sections: vec![],
+                delimiter: proc_macro2::Delimiter::None,
+                span: proc_macro2::Span::call_site(),
             };
 
             let parsers = [
@@ -96,9 +108,12 @@ impl PartialParser for NoNestRepeatGroup {
 
         let ret = parser.parse2(g.stream());
         eprintln!("parse_group: post-visit: {:?}", input);
-
         match ret {
-            Ok(no_nest_repeat_group) => Ok(ParseOutcome::Valid(no_nest_repeat_group)),
+            Ok(mut group) => {
+                group.delimiter = g.delimiter();
+                group.span = g.span();
+                Ok(ParseOutcome::Valid(group))
+            }
             Err(error) => Err(error),
         }
     }
