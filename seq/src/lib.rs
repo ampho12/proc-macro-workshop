@@ -197,8 +197,6 @@ impl syn::parse::Parse for ParseContext {
             is_inclusive = true;
         }
 
-
-
         let end_lit: syn::LitInt = input.parse()?;
         let mut end: usize;
         if let Ok(val) = end_lit.base10_parse::<usize>() {
