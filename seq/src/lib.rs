@@ -190,12 +190,25 @@ impl syn::parse::Parse for ParseContext {
             return Err(input.error("Expected usize in base10"));
         }
         input.parse::<syn::Token![..]>()?;
+
+        let mut is_inclusive = false;
+        if input.peek(syn::token::Eq) {
+            input.parse::<syn::Token![=]>()?;
+            is_inclusive = true;
+        }
+
+
+
         let end_lit: syn::LitInt = input.parse()?;
-        let end: usize;
+        let mut end: usize;
         if let Ok(val) = end_lit.base10_parse::<usize>() {
             end = val;
         } else {
             return Err(input.error("Expected usize in base10"));
+        }
+
+        if is_inclusive {
+            end += 1;
         }
 
         // eprintln!("{:?} {:?} {:?}", iter_ident, start, end);
