@@ -13,13 +13,14 @@ use quote::quote;
 use crate::concat_section::ConcatSection;
 use crate::identity_section::IdentitySection;
 use crate::replace_section::ReplaceSection;
+use crate::repeat_group::RepeatGroup;
 
 use syn::parse::Parser;
 
 #[derive(Clone)]
 #[derive(Debug)]
 pub struct Group {
-    sections: Vec<SectionTree>,
+    pub sections: Vec<SectionTree>,
     delimiter: proc_macro2::Delimiter,
     span: proc_macro2::Span,
 }
@@ -80,6 +81,7 @@ impl PartialParser for Group {
                 try_extract_section_tree::<IdentitySection>,
                 try_extract_section_tree::<ConcatSection>,
                 try_extract_section_tree::<ReplaceSection>,
+                try_extract_section_tree::<RepeatGroup>,
                 try_extract_section_tree::<Group>,
             ];
 

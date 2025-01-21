@@ -22,8 +22,23 @@
 
 use seq::seq;
 
-seq!(N in 0..8 {
-});
+// seq!(N in 0..8 {
+// });
 
+// seq!(N in 0..2 {
+//     {
+//         hello world~N(_a: u32, _b:u32) -> usize {
+//             N
+//         }
+//     }
+// });
+
+
+seq!(N in 0..5 {
+    enum hello
+        {
+            #( Ok~N, )*
+        }
+});
 
 fn main() {}

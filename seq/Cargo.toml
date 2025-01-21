@@ -8,14 +8,14 @@ publish = false
 [lib]
 proc-macro = true
 
-[[test]]
-name = "tests"
-path = "tests/progress.rs"
-
 # [[test]]
-# name = "01"
-# path = "tests/01-parse-header.rs"
-# 
+# name = "tests"
+# path = "tests/progress.rs"
+
+[[test]]
+name = "01"
+path = "tests/01-parse-header.rs"
+
 # [[test]]
 # name = "02"
 # path = "tests/02-parse-body.rs"
@@ -23,19 +23,19 @@ path = "tests/progress.rs"
 # [[test]]
 # name = "03"
 # path = "tests/03-expand-four-errors.rs"
-
+# 
 # [[test]]
 # name = "04"
 # path = "tests/04-paste-ident.rs"
-
+# 
 # [[test]]
 # name = "05"
 # path = "tests/05-repeat-section.rs"
-
+# 
 # [[test]]
 # name = "06"
 # path = "tests/06-init-array.rs"
-
+# 
 # [[test]]
 # name = "08"
 # path = "tests/08-ident-span.rs"

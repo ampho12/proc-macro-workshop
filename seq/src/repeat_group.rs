@@ -13,14 +13,15 @@ use quote::quote;
 use crate::concat_section::ConcatSection;
 use crate::identity_section::IdentitySection;
 use crate::replace_section::ReplaceSection;
-use crate::no_nest_repeat_group::NoNestRepeatGroup;
+use crate::group::Group;
+// use crate::no_nest_repeat_group::NoNestRepeatGroup;
 
 use syn::parse::Parser;
 
 #[derive(Clone)]
 #[derive(Debug)]
 pub struct RepeatGroup {
-    sections: Vec<SectionTree>
+    pub sections: Vec<SectionTree>
 }
 
 impl Expand for RepeatGroup {
@@ -96,7 +97,7 @@ impl PartialParser for RepeatGroup {
                 try_extract_section_tree::<IdentitySection>,
                 try_extract_section_tree::<ConcatSection>,
                 try_extract_section_tree::<ReplaceSection>,
-                try_extract_section_tree::<NoNestRepeatGroup>,
+                try_extract_section_tree::<Group>,
             ];
 
             while !input.is_empty() {

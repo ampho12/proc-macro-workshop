@@ -7,6 +7,7 @@ mod no_nest_repeat_group;
 mod repeat_group;
 mod base_nest_repeat_group;
 mod base_no_nest_repeat_group;
+// mod base_group;
 
 use concat_section::ConcatSection;
 use identity_section::IdentitySection;
@@ -17,6 +18,8 @@ use no_nest_repeat_group::NoNestRepeatGroup;
 use repeat_group::RepeatGroup;
 use base_nest_repeat_group::BaseNestRepeatGroup;
 use base_no_nest_repeat_group::BaseNoNestRepeatGroup;
+// use base_group::BaseGroup;
+
 
 use proc_macro::TokenStream;
 use quote::quote;
@@ -27,6 +30,121 @@ enum ParseOutcome<T> {
     Valid(T),            // Fully valid result
     RecoverableError,    // Invalid but recoverable, e.g. parse another way
 }
+
+trait SectionVisitor<'ast> {
+    type Output;
+    fn visit_identity(&mut self, sect: &IdentitySection) -> Self::Output;
+    fn visit_concat(&mut self, sect: &ConcatSection) -> Self::Output;
+    fn visit_replace(&mut self, sect: &ReplaceSection) -> Self::Output;
+    fn visit_repeat_group(&mut self, sect: &RepeatGroup) -> Self::Output;
+    fn visit_group(&mut self, sect: &Group) -> Self::Output;
+}
+
+trait Visitee<'a> {
+    fn visit<V: SectionVisitor<'a>>(&self, visitor: &mut V) -> <V as SectionVisitor<'a>>::Output;
+}
+
+impl<'a> Visitee<'a> for SectionTree {
+    fn visit<V: SectionVisitor<'a>>(&self, visitor: &mut V) -> <V as SectionVisitor<'a>>::Output {
+        match self {
+            SectionTree::Identity(ref sect) => visitor.visit_identity(sect),
+            SectionTree::Concat(ref sect) => visitor.visit_concat(sect),
+            SectionTree::Replace(ref sect) => visitor.visit_replace(sect),
+            SectionTree::Group(ref sect) => visitor.visit_group(sect),
+            SectionTree::RepeatGroup(ref sect) => visitor.visit_repeat_group(sect),
+            _ => panic!("Not Implemented Section Visitor"),
+        }
+    }
+}
+
+struct CheckRepeatSection;
+impl<'a> SectionVisitor<'a> for CheckRepeatSection {
+    type Output = bool;
+
+    fn visit_identity(&mut self, _sect: &IdentitySection) -> Self::Output {
+        false
+    }
+
+    fn visit_concat(&mut self, _sect: &ConcatSection) -> Self::Output {
+        false
+    }
+
+    fn visit_replace(&mut self, _sect: &ReplaceSection) -> Self::Output {
+        false
+    }
+
+    fn visit_repeat_group(&mut self, _sect: &RepeatGroup) -> Self::Output {
+        true
+    }
+
+    fn visit_group(&mut self, sect: &Group) -> Self::Output {
+        let mut ret = false;
+        for sect2 in sect.sections.iter() {
+            ret |= sect2.visit(self);
+        }
+        ret
+    }
+}
+
+struct SectionSanitizer {
+    has_repeat_group: bool,
+    in_repeat_group: bool,
+}
+
+impl SectionSanitizer {
+    fn new(has_repeat_group: bool) -> Self {
+        SectionSanitizer {
+            has_repeat_group,
+            in_repeat_group: false,
+        }
+    }
+}
+
+impl<'a> SectionVisitor<'a> for SectionSanitizer {
+    type Output = bool;
+
+    fn visit_identity(&mut self, _sect: &IdentitySection) -> Self::Output {
+        true
+    }
+
+    fn visit_concat(&mut self, _sect: &ConcatSection) -> Self::Output {
+        !self.has_repeat_group || self.in_repeat_group
+    }
+
+    fn visit_replace(&mut self, _sect: &ReplaceSection) -> Self::Output {
+        !self.has_repeat_group || self.in_repeat_group
+    }
+
+    fn visit_repeat_group(&mut self, sect: &RepeatGroup) -> Self::Output {
+
+        if self.in_repeat_group {
+            return false;
+        }
+
+        self.in_repeat_group = true;
+
+        for sect2 in sect.sections.iter() {
+            if !sect2.visit(self) {
+                return false;
+            }
+        }
+        self.in_repeat_group = false;
+        true
+    }
+
+    fn visit_group(&mut self, sect: &Group) -> Self::Output {
+        for sect2 in sect.sections.iter() {
+            if !sect2.visit(self) {
+                return false
+            }
+        }
+        true
+    }
+}
+
+
+
+
 
 #[derive(Clone)]
 #[derive(Debug)]
@@ -245,12 +363,19 @@ impl SeqTree {
 impl syn::parse::Parse for SeqTree {
     fn parse(input: syn::parse::ParseStream) -> syn::parse::Result<Self> {
         let parse_ctx: ParseContext = input.parse()?;
-        // eprintln!("parse_ctx is {:?}", parse_ctx);
 
 
-        match try_extract::<BaseNestRepeatGroup>(&parse_ctx, input) {
+        match try_extract::<Group>(&parse_ctx, input) {
             Ok(ParseOutcome::Valid(sect)) => {
-                eprintln!("base_nest_repeat_group: {:?}\n", sect);
+                eprintln!("group: {:?}\n", sect);
+
+                let has_repeat_group = SectionTree::from(sect.clone()).visit(&mut CheckRepeatSection {});
+                let mut sanitizer = SectionSanitizer::new(has_repeat_group);
+                // std::convert::Into::<SectionTree>::into(
+                let ret = SectionTree::from(sect.clone()).visit(&mut sanitizer);
+                if !ret {
+                    panic!("Cannot sanitize");
+                }
                 return Ok(SeqTree{
                     parse_ctx,
                     base_section: sect.into(),
@@ -260,17 +385,29 @@ impl syn::parse::Parse for SeqTree {
             Err(err) => return Err(err),
         }
 
-        match try_extract::<BaseNoNestRepeatGroup>(&parse_ctx, input) {
-            Ok(ParseOutcome::Valid(sect)) => {
-                eprintln!("base_no_nest_repeat_group: {:?}\n", sect);
-                return Ok(SeqTree{
-                    parse_ctx,
-                    base_section: sect.into(),
-                })
-            }
-            Ok(ParseOutcome::RecoverableError) => {},
-            Err(err) => return Err(err),
-        }
+        // match try_extract::<BaseNestRepeatGroup>(&parse_ctx, input) {
+        //     Ok(ParseOutcome::Valid(sect)) => {
+        //         eprintln!("base_nest_repeat_group: {:?}\n", sect);
+        //         return Ok(SeqTree{
+        //             parse_ctx,
+        //             base_section: sect.into(),
+        //         })
+        //     }
+        //     Ok(ParseOutcome::RecoverableError) => {},
+        //     Err(err) => return Err(err),
+        // }
+
+        // match try_extract::<BaseNoNestRepeatGroup>(&parse_ctx, input) {
+        //     Ok(ParseOutcome::Valid(sect)) => {
+        //         eprintln!("base_no_nest_repeat_group: {:?}\n", sect);
+        //         return Ok(SeqTree{
+        //             parse_ctx,
+        //             base_section: sect.into(),
+        //         })
+        //     }
+        //     Ok(ParseOutcome::RecoverableError) => {},
+        //     Err(err) => return Err(err),
+        // }
 
         Err(input.error("Unable to parse as anything"))
     }
@@ -283,7 +420,17 @@ pub fn seq(input: TokenStream) -> TokenStream {
     
     let seq_tree = syn::parse_macro_input!(input as SeqTree);
 
-    seq_tree.expand().into()
+    let stream = seq_tree.expand();
+
+    let proc_macro2::TokenTree::Group(group) = stream.into_iter().next().unwrap() else {
+        panic!("Didn't recieve group");
+    };
+
+    let ret = group.stream();
+
+    eprintln!("ret: {:?}", ret);
+
+    ret.into()
     
     // let parse_ctx = syn::parse::<ParseContext>(input);
     // eprintln!("{:?}", seq_tree);
