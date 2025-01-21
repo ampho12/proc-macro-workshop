@@ -341,12 +341,13 @@ impl syn::parse::Parse for ParseContext {
 struct SeqTree {
     parse_ctx: ParseContext,
     base_section: SectionTree,
+    has_repeat_group: bool,
 }
 
 impl SeqTree {
     fn expand(self) -> proc_macro2::TokenStream {
 
-        let expand_context = ExpandContext {
+        let ctx = ExpandContext {
             target: proc_macro2::TokenTree::Literal(
                 proc_macro2::Literal::usize_unsuffixed(69)
             ),
@@ -354,8 +355,35 @@ impl SeqTree {
             start: self.parse_ctx.start,
             end: self.parse_ctx.end,
         };
+        if self.has_repeat_group {
+            let stream = self.base_section.expand(&ctx);
+            let proc_macro2::TokenTree::Group(group) = stream.into_iter().next().unwrap() else {
+                panic!("Didn't recieve group");
+            };
+            group.stream()
+        } else {
+            // we cannot simply repeat
+            // iterate over the internal sections of the Group Section
+            
+            let SectionTree::Group(group) = self.base_section else {
+                panic!("First section must be group section");
+            };
 
-        self.base_section.expand(&expand_context)
+            let ret_it = (ctx.start..ctx.end).flat_map(|n| {
+                let mut expand_ctx: ExpandContext = ctx.clone();
+                expand_ctx.target = proc_macro2::TokenTree::Literal(
+                    proc_macro2::Literal::usize_unsuffixed(n)
+                );
+                group.sections.clone().into_iter().flat_map(move |sect| {
+                    sect.expand(&expand_ctx).into_iter()
+                })
+            });
+
+            quote! {
+                #(#ret_it)*
+            }
+        }
+
     }
 }
 
@@ -379,6 +407,7 @@ impl syn::parse::Parse for SeqTree {
                 return Ok(SeqTree{
                     parse_ctx,
                     base_section: sect.into(),
+                    has_repeat_group,
                 })
             }
             Ok(ParseOutcome::RecoverableError) => {},
@@ -422,15 +451,15 @@ pub fn seq(input: TokenStream) -> TokenStream {
 
     let stream = seq_tree.expand();
 
-    let proc_macro2::TokenTree::Group(group) = stream.into_iter().next().unwrap() else {
-        panic!("Didn't recieve group");
-    };
+    // let proc_macro2::TokenTree::Group(group) = stream.into_iter().next().unwrap() else {
+    //     panic!("Didn't recieve group");
+    // };
 
-    let ret = group.stream();
+    // let ret = group.stream();
 
-    eprintln!("ret: {:?}", ret);
+    eprintln!("ret: {:?}", stream);
 
-    ret.into()
+    stream.into()
     
     // let parse_ctx = syn::parse::<ParseContext>(input);
     // eprintln!("{:?}", seq_tree);

@@ -8,13 +8,13 @@ publish = false
 [lib]
 proc-macro = true
 
-# [[test]]
-# name = "tests"
-# path = "tests/progress.rs"
-
 [[test]]
-name = "01"
-path = "tests/01-parse-header.rs"
+name = "tests"
+path = "tests/progress.rs"
+
+# [[test]]
+# name = "01"
+# path = "tests/01-parse-header.rs"
 
 # [[test]]
 # name = "02"
