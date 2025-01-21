@@ -130,10 +130,6 @@ impl<'a> SectionVisitor<'a> for SectionSanitizer {
     }
 }
 
-
-
-
-
 #[derive(Clone)]
 #[derive(Debug)]
 enum SectionTree {
@@ -251,7 +247,6 @@ struct ParseContext {
 }
 
 impl syn::parse::Parse for ParseContext {
-// impl ParseContext {
     fn parse(input: syn::parse::ParseStream) -> syn::parse::Result<ParseContext> {
         let iter_ident: syn::Ident = input.parse()?;
         input.parse::<syn::Token![in]>()?;
@@ -281,9 +276,6 @@ impl syn::parse::Parse for ParseContext {
         if is_inclusive {
             end += 1;
         }
-
-        // eprintln!("{:?} {:?} {:?}", iter_ident, start, end);
-        // eprintln!("input: {:?}", input);
         Ok(ParseContext{
             iter_ident,
             start,
@@ -368,77 +360,14 @@ impl syn::parse::Parse for SeqTree {
             Ok(ParseOutcome::RecoverableError) => {},
             Err(err) => return Err(err),
         }
-
-        // match try_extract::<BaseNestRepeatGroup>(&parse_ctx, input) {
-        //     Ok(ParseOutcome::Valid(sect)) => {
-        //         eprintln!("base_nest_repeat_group: {:?}\n", sect);
-        //         return Ok(SeqTree{
-        //             parse_ctx,
-        //             base_section: sect.into(),
-        //         })
-        //     }
-        //     Ok(ParseOutcome::RecoverableError) => {},
-        //     Err(err) => return Err(err),
-        // }
-
-        // match try_extract::<BaseNoNestRepeatGroup>(&parse_ctx, input) {
-        //     Ok(ParseOutcome::Valid(sect)) => {
-        //         eprintln!("base_no_nest_repeat_group: {:?}\n", sect);
-        //         return Ok(SeqTree{
-        //             parse_ctx,
-        //             base_section: sect.into(),
-        //         })
-        //     }
-        //     Ok(ParseOutcome::RecoverableError) => {},
-        //     Err(err) => return Err(err),
-        // }
-
         Err(input.error("Unable to parse as anything"))
     }
 }
 
 #[proc_macro]
 pub fn seq(input: TokenStream) -> TokenStream {
-
-    // let input = input.parse::<syn::parse::ParseStream>()?;
-    
     let seq_tree = syn::parse_macro_input!(input as SeqTree);
-
     let stream = seq_tree.expand();
-
-    // let proc_macro2::TokenTree::Group(group) = stream.into_iter().next().unwrap() else {
-    //     panic!("Didn't recieve group");
-    // };
-
-    // let ret = group.stream();
-
     eprintln!("ret: {:?}", stream);
-
     stream.into()
-    
-    // let parse_ctx = syn::parse::<ParseContext>(input);
-    // eprintln!("{:?}", seq_tree);
-
-    // let Ok(parse_ctx) = syn::parse::<ParseContext>(input) else {
-    //     let err = syn::Error::new(proc_macro2::Span::call_site(), "Unable to parse header").to_compile_error();
-    //     let ret = quote! {
-    //         #err
-    //     };
-    //     return ret.into();
-    // };
-    // input.parse()?;
-    // let header_parser = ParseContext::parse;
-    // let parse_ctx = header_parser.parse(input);
-
-    // let Ok(parse_ctx) = header_parser.parse(input) else {
-    //     let err = syn::Error::new(proc_macro2::Span::call_site(), "Unable to parse header").to_compile_error();
-    //     let ret = quote! {
-    //         #err
-    //     };
-    //     return ret.into();
-    // };
-
-    // let parse_ctx: ParseContext = input.parse()?;
-    
-    // TokenStream::new()
 }

@@ -52,7 +52,7 @@ impl Expand for ConcatSection {
 impl PartialParser for ConcatSection {
     type Output = Self;
     fn parse(
-        ctx: &ParseContext,
+        _ctx: &ParseContext,
         input: syn::parse::ParseStream
     ) -> syn::parse::Result<ParseOutcome<Self::Output>>
     {
@@ -83,7 +83,7 @@ impl PartialParser for ConcatSection {
                 return Err(input.error("Expected Token after '~'"));
             }
             // this has to be tilde
-            let tilde = input.parse::<proc_macro2::TokenTree>()?;
+            let _tilde = input.parse::<proc_macro2::TokenTree>()?;
 
             if fork.peek(syn::Token![#]) {
                 return Err(input.error("Cannot concatenate '#'"));
@@ -92,7 +92,7 @@ impl PartialParser for ConcatSection {
             if fork.parse::<proc_macro2::Group>().is_ok() {
                 return Err(input.error("Expected Non-Group Token"));
             }
-            let mut ret = input.parse::<proc_macro2::TokenTree>()?;
+            let ret = input.parse::<proc_macro2::TokenTree>()?;
 
             // let span1 = proc_macro2::Span::call_site();
             // let span2 = proc_macro2::Span::call_site();
@@ -119,7 +119,7 @@ impl PartialParser for ConcatSection {
             // try parsing another way if possible
             return Ok(ParseOutcome::RecoverableError);
         }
-        let mut src_span;
+        let src_span;
 
         match input.parse::<proc_macro2::TokenTree>() {
             Ok(tt) => {
