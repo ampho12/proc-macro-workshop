@@ -2,28 +2,17 @@ mod concat_section;
 mod identity_section;
 mod replace_section;
 mod group;
-mod identity_group;
-mod no_nest_repeat_group;
 mod repeat_group;
-mod base_nest_repeat_group;
-mod base_no_nest_repeat_group;
-// mod base_group;
 
 use concat_section::ConcatSection;
 use identity_section::IdentitySection;
 use replace_section::ReplaceSection;
 use group::Group;
-use identity_group::IdentityGroup;
-use no_nest_repeat_group::NoNestRepeatGroup;
 use repeat_group::RepeatGroup;
-use base_nest_repeat_group::BaseNestRepeatGroup;
-use base_no_nest_repeat_group::BaseNoNestRepeatGroup;
-// use base_group::BaseGroup;
 
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::parse::Parser;
 
 #[derive(Debug)]
 enum ParseOutcome<T> {
@@ -52,7 +41,6 @@ impl<'a> Visitee<'a> for SectionTree {
             SectionTree::Replace(ref sect) => visitor.visit_replace(sect),
             SectionTree::Group(ref sect) => visitor.visit_group(sect),
             SectionTree::RepeatGroup(ref sect) => visitor.visit_repeat_group(sect),
-            _ => panic!("Not Implemented Section Visitor"),
         }
     }
 }
@@ -153,12 +141,7 @@ enum SectionTree {
     Concat(ConcatSection),
     Replace(ReplaceSection),
     Group(Group),
-    NoNestRepeatGroup(NoNestRepeatGroup),
     RepeatGroup(RepeatGroup),
-
-    IdentityGroup(IdentityGroup),
-    BaseNestRepeatGroup(BaseNestRepeatGroup),
-    BaseNoNestRepeatGroup(BaseNoNestRepeatGroup),
 }
 impl From<IdentitySection> for SectionTree {
     fn from(section: IdentitySection) -> Self {
@@ -184,33 +167,9 @@ impl From<Group> for SectionTree {
     }
 }
 
-impl From<NoNestRepeatGroup> for SectionTree {
-    fn from(section: NoNestRepeatGroup) -> Self {
-        SectionTree::NoNestRepeatGroup(section)
-    }
-}
-
 impl From<RepeatGroup> for SectionTree {
     fn from(section: RepeatGroup) -> Self {
         SectionTree::RepeatGroup(section)
-    }
-}
-
-impl From<IdentityGroup> for SectionTree {
-    fn from(section: IdentityGroup) -> Self {
-        SectionTree::IdentityGroup(section)
-    }
-}
-
-impl From<BaseNestRepeatGroup> for SectionTree {
-    fn from(section: BaseNestRepeatGroup) -> Self {
-        SectionTree::BaseNestRepeatGroup(section)
-    }
-}
-
-impl From<BaseNoNestRepeatGroup> for SectionTree {
-    fn from(section: BaseNoNestRepeatGroup) -> Self {
-        SectionTree::BaseNoNestRepeatGroup(section)
     }
 }
 
@@ -266,13 +225,9 @@ impl Expand for SectionTree {
     fn expand(self, ctx: &ExpandContext) -> proc_macro2::TokenStream {
         match self {
             SectionTree::Identity(sect) => sect.expand(ctx),
-            SectionTree::IdentityGroup(sect) => sect.expand(ctx),
             SectionTree::Group(sect) => sect.expand(ctx),
             SectionTree::Concat(sect) => sect.expand(ctx),
             SectionTree::Replace(sect) => sect.expand(ctx),
-            SectionTree::BaseNoNestRepeatGroup(sect) => sect.expand(ctx),
-            SectionTree::NoNestRepeatGroup(sect) => sect.expand(ctx),
-            SectionTree::BaseNestRepeatGroup(sect) => sect.expand(ctx),
             SectionTree::RepeatGroup(sect) => sect.expand(ctx),
         }
     }
